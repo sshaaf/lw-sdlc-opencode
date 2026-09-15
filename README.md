@@ -4,7 +4,7 @@ Autonomous software supply chain remediation using OpenCode on OpenShift. See **
 
 GitLab auth uses **username + password** in cluster Secrets; a PAT is **derived at runtime** when MCP needs it—see [.opencode/reference/gitlab-credentials.md](.opencode/reference/gitlab-credentials.md).
 
-**Agent triggers (current):** Nexus and GitLab **webhooks → Ansible EDA** → OpenCode (`impact-analyzer` / `mr-verifier`) — see [spec.md §3](spec.md). **Future option:** GitLab CI in [gitlab/](gitlab/README.md) (documented, not used).
+**Agent triggers (current):** Nexus and GitLab **webhooks → Ansible EDA** → OpenCode — see [spec.md §3](spec.md). **Infra:** Argo CD GitOps only (`gitops/`, `openshift/`); Ansible is **not** used to deploy the cluster stack ([spec.md §1.4](spec.md)). **Future option:** GitLab CI in [gitlab/](gitlab/README.md).
 
 ## Container image CI
 

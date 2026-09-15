@@ -1,5 +1,6 @@
 ---
-# Example activation variables — copy to EDA Activation / vault; do not commit real secrets.
+# EDA activation template — prefer GitOps: gitops/base/cluster-config/cluster-config.yaml
+# (see gitops/config/README.md and gitops/sdlc-eda/). Do not commit real secrets.
 
 tpa_url: "https://tpa.example.com"
 keycloak_url: "https://keycloak.example.com"

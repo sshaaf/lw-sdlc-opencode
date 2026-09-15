@@ -1,0 +1,26 @@
+# Reference only — EDA activation runs on platform AAP/EDA, not as a pod in this namespace.
+# Copy keys into AAP Credential / activation extra_vars; passwords from Secrets (see gitops/secrets/).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdlc-eda-activation-reference
+  labels:
+    app.kubernetes.io/part-of: sdlc-remediation
+data:
+  README: |
+    Source non-secret values from ConfigMap sdlc-cluster-config in sdlc-control-plane.
+    Rulebook: eda-rulebooks/sdlc-remediation.yml
+    Playbooks path: playbooks/ (mount or project sync from this git repo)
+  extra_vars_mapping: |
+    tpa_url=TPA_URL
+    keycloak_url=KEYCLOAK_URL
+    keycloak_tpa_realm=KEYCLOAK_TPA_REALM
+    tpa_oauth_client_id=TPA_OAUTH_CLIENT_ID
+    tpa_uploader_username=TPA_UPLOADER_USERNAME
+    tpa_sbom_label=TPA_SBOM_LABEL
+    eda_webhook_url=EDA_WEBHOOK_URL
+    gitlab_url=GITLAB_URL
+    remediation_app_gitlab_path=REMEDIATION_APP_GITLAB_PATH
+    opencode_base_url=OPENCODE_BASE_URL
+    opencode_server_username=OPENCODE_SERVER_USERNAME
+    validate_certs=VALIDATE_CERTS

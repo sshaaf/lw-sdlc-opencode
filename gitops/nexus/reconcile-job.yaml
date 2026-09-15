@@ -1,0 +1,84 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nexus-reconcile
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app: nexus-reconcile
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: nexus-reconcile
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: reconcile
+          image: python:3.12-alpine
+          command: ["python3", "/scripts/nexus-reconcile.py"]
+          env:
+            - name: NEXUS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: sdlc-cluster-config
+                  key: NEXUS_URL
+            - name: EDA_WEBHOOK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: sdlc-cluster-config
+                  key: EDA_WEBHOOK_URL
+            - name: NEXUS_WEBHOOK_REPOSITORIES
+              valueFrom:
+                configMapKeyRef:
+                  name: sdlc-cluster-config
+                  key: NEXUS_WEBHOOK_REPOSITORIES
+                  optional: true
+            - name: SKIP_REPOSITORY_SETUP
+              valueFrom:
+                configMapKeyRef:
+                  name: sdlc-cluster-config
+                  key: SKIP_REPOSITORY_SETUP
+                  optional: true
+            - name: SKIP_WEBHOOK_SETUP
+              valueFrom:
+                configMapKeyRef:
+                  name: sdlc-cluster-config
+                  key: SKIP_WEBHOOK_SETUP
+                  optional: true
+            - name: NEXUS_USER
+              value: admin
+            - name: NEXUS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nexus-admin
+                  key: password
+            - name: LIGHTWELL_NETWORK_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: redhat-packages-credentials
+                  key: username
+            - name: LIGHTWELL_NETWORK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redhat-packages-credentials
+                  key: password
+            - name: NEXUS_REPOSITORIES_FILE
+              value: /config/lightwell-repositories.json
+          volumeMounts:
+            - name: repos-config
+              mountPath: /config
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: repos-config
+          configMap:
+            name: lightwell-repositories
+        - name: scripts
+          configMap:
+            name: nexus-reconcile-source
+            defaultMode: 0555

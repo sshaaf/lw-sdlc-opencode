@@ -14,7 +14,9 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 
 **Event automation (Ansible EDA):** Webhook ingress, TPA API calls, and OpenCode HTTP triggers run as **EDA rulebooks + playbooks** in this repository (`eda-rulebooks/`, `playbooks/`). Ansible is the **control plane for the remediation event chain**, not for provisioning cluster infrastructure.
 
-**Runtime / platform (Argo CD GitOps):** All **infrastructure** on OpenShift—namespaces, Operators, EDA itself, OpenCode Deployment, Routes, GitLab MCP, Secrets/ExternalSecrets wiring, TPA/Keycloak *as cluster services*, network policies—is installed and updated only via **Git** under `gitops/` and `openshift/` (Argo CD Applications reconcile). Do **not** use Ansible playbooks like a Lightwell `demo-setup.sh deploy` to create or mutate that platform layer.
+**Runtime / platform (Argo CD GitOps):** Workloads **owned by this project** (OpenCode, integration secrets, optional MCP) are installed and updated via **Git** under `gitops/` and `openshift/` (Argo CD Applications reconcile). **Shared platform** components (Keycloak, AAP/EDA, RHTPA, RHTAS, GitLab, JFrog Artifactory, Jenkins, SonarQube, Quay, Argo CD itself) may be **pre-installed** in the managed environment—see [`docs/reference/infra-platform-stack.md`](docs/reference/infra-platform-stack.md). This demo does **not** use Artifactory or Jenkins for the remediation loop. Do **not** use Ansible playbooks like a Lightwell `demo-setup.sh deploy` to install that platform layer; EDA **runs** rulebooks from git on the existing AAP/EDA stack.
+
+**Artifact note:** **Sonatype Nexus** (repository webhooks) is the artifact ingress for EDA—not **JFrog Artifactory**. Artifactory OSS does not support the webhooks this loop needs (Enterprise-only); see [`docs/reference/infra-platform-stack.md`](docs/reference/infra-platform-stack.md). `gitops/nexus/` configures Lightwell repos and Nexus → EDA webhooks (§3.1).
 
 **Non-deterministic work** (impact analysis, code changes, MR text, verify orchestration) runs in **OpenCode** with MCP tools. Ephemeral verify namespaces and Jobs created by `mr-verifier` remain agent-driven exceptions per §5 (not GitOps steady state).
 
@@ -77,11 +79,15 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 ├── .github/
 │   └── workflows/
 │       └── ci-opencode-image.yml
-├── gitops/                    # Argo CD Applications, AppProjects, cluster add-ons
-│   ├── argocd/
-│   │   ├── applications/
-│   │   └── ...
-│   └── nexus/                 # Nexus webhook reconcile (Job/hook) → EDA URL
+├── gitops/                    # Argo CD Applications, integration config, workloads
+│   ├── README.md              # Start: fill base/cluster-config, then secrets, then sync apps
+│   ├── base/cluster-config/   # ConfigMap sdlc-cluster-config (non-secret URLs)
+│   ├── config/                # integration-catalog + early config-only Argo path
+│   ├── secrets/               # ExternalSecret examples + contract
+│   ├── argocd/applications/
+│   ├── sdlc-control-plane/
+│   ├── sdlc-eda/
+│   └── nexus/
 │       └── README.md
 ├── docs/reference/
 │   └── nexus-webhook-ansible-baseline.md   # API steps ported from Ansible → GitOps
@@ -108,7 +114,9 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 
 | Concern | Tool | Examples |
 |---------|------|----------|
-| **Infrastructure** | **Argo CD GitOps** | OpenCode Deployment, EDA operator/activation CRs, Routes, MCP server, RBAC, ExternalSecrets, TPA/Keycloak *if managed as cluster apps*, **Nexus repository webhooks → EDA** (§3.1) |
+| **Infrastructure (this repo)** | **Argo CD GitOps** | OpenCode Deployment, Routes, MCP server, RBAC, ExternalSecrets, optional integration Jobs |
+| **Platform (pre-installed)** | **Ops / platform team** | Keycloak, AAP+EDA, RHTPA, RHTAS, GitLab, Quay, Argo CD, etc. — see [`infra-platform-stack.md`](docs/reference/infra-platform-stack.md); Artifactory/Jenkins not used here |
+| **Event wiring** | **EDA + platform config** | **Nexus** + GitLab webhooks → existing EDA; rulebook content from this git repo |
 | **Event chain** | **Ansible EDA** | Rulebooks on `:5000`, `query-tpa.yml`, `trigger-impact-analyzer.yml`, `trigger-mr-verifier.yml`, `tpa_results` callbacks |
 | **Application image** | **GitHub Actions → Quay** | Container build; GitOps updates image tag/digest in Git |
 | **Ephemeral test resources** | **OpenCode agent (`oc`)** | `pr-test-mr-*` namespaces, verify Jobs (exception to GitOps steady state) |
@@ -147,7 +155,7 @@ Nexus must POST component events to EDA when artifacts are published. **Webhook 
 
 | Item | Requirement |
 |------|-------------|
-| **Delivery** | Argo CD Application syncs `gitops/nexus/` (Job, ConfigMap script, or hook) |
+| **Delivery** | Argo CD Application syncs `gitops/nexus/` (Kustomize: Lightwell Maven repos + EDA webhooks via PostSync Job) |
 | **Idempotency** | Before create, list `GET /service/rest/v1/capabilities`; skip if same `repository` + `url` exists |
 | **Nexus API** | Prefer **ExtDirect** `POST /service/extdirect` with `typeId: webhook.repository`, `names: component`, `properties.url` = EDA URL (REST create may 500 on some Nexus OSS builds) |
 | **Repositories** | One webhook capability per hosted Maven repo (parameterize list; Lightwell used `redhat-packages-validated` / `redhat-packages-remediated`) |

@@ -1,21 +1,50 @@
-# GitOps: Nexus → EDA webhooks
+# GitOps: Nexus (Lightwell repos + EDA webhooks)
 
-Nexus **repository webhook capabilities** are **platform configuration** and MUST be applied via **Argo CD**, not Ansible EDA playbooks or one-off `ansible-playbook deploy`.
+Configures an **existing** Nexus instance (for example `lightwell-nexus` from the Lightwell Ansible stack). **JFrog Artifactory is not used** for EDA triggers—Artifactory OSS lacks repository webhooks (Enterprise feature); Nexus webhooks are the chosen ingress ([`docs/reference/infra-platform-stack.md`](../../docs/reference/infra-platform-stack.md)).
 
-## Argo ownership
+This directory does **not** deploy the Nexus StatefulSet; it runs an idempotent **PostSync Job** that mirrors:
 
-- Application (example): `gitops/argocd/applications/nexus-webhooks.yaml` → syncs manifests in this directory.
-- Implementation: PreSync/PostSync Job, Operator wrapper, or pinned container that runs the idempotent API flow in [`docs/reference/nexus-webhook-ansible-baseline.md`](../../docs/reference/nexus-webhook-ansible-baseline.md).
+`lightwell-demo-collateral/ansible/playbooks/tasks/deploy-nexus-complete.yml`
 
-## Required inputs (from cluster / ESO, not git)
+| Step | Ansible task | GitOps |
+|------|----------------|--------|
+| Wait for API | `Wait for Nexus API` | `nexus-reconcile.py` |
+| Anonymous access | `Enable anonymous access` | same (best-effort) |
+| Maven proxies | `Create Maven proxy repositories` | `lightwell-repositories.json` |
+| Maven hosted | `Create Maven hosted repositories` | same |
+| EDA webhooks | ExtDirect `webhook.repository` | same (validated + remediated) |
 
-| Variable | Purpose |
-|----------|---------|
-| `NEXUS_URL` | Nexus base URL |
-| `NEXUS_ADMIN_PASSWORD` | Admin basic auth for ExtDirect |
-| `EDA_WEBHOOK_URL` | EDA listener (cluster DNS), e.g. `http://sdlc-eda-webhook.sdlc-control-plane.svc:5000/` |
-| `NEXUS_WEBHOOK_REPOSITORIES` | JSON/YAML list of hosted repo names to attach `component` events |
+## Argo CD
 
-## EDA side (separate Application)
+- Application: `gitops/argocd/applications/nexus-webhooks.yaml`
+- Build: **Kustomize** (`kustomization.yaml`) — ConfigMaps from `nexus-reconcile.py` + `lightwell-repositories.json`, Job `reconcile-job.yaml`
 
-EDA rulebook Deployment/Activation is its own GitOps Application; Nexus webhooks only **point** at the EDA URL once that Service exists.
+## Prerequisites
+
+1. [`../base/cluster-config/cluster-config.yaml`](../base/cluster-config/cluster-config.yaml) synced as `sdlc-cluster-config` in `sdlc-control-plane`.
+2. Secrets per [`../secrets/README.md`](../secrets/README.md): `nexus-admin`, `redhat-packages-credentials`.
+3. EDA webhook Service up before webhooks are created (`EDA_WEBHOOK_URL` in cluster config).
+
+Default webhook targets match Ansible: **`redhat-packages-validated`** and **`redhat-packages-remediated`**.
+
+## Repository catalog
+
+[`lightwell-repositories.json`](lightwell-repositories.json) — same list as `ansible/inventory/hosts.yml` → `nexus_repositories`:
+
+- Proxies: `redhat-packages-validated`, `redhat-packages-remediated`, `maven-central`
+- Hosted: `maven-releases`
+
+## Local dry-run
+
+```bash
+export NEXUS_URL=https://nexus.example.com
+export NEXUS_ADMIN_PASSWORD=...
+export LIGHTWELL_NETWORK_USERNAME=...
+export LIGHTWELL_NETWORK_PASSWORD=...
+export EDA_WEBHOOK_URL=http://127.0.0.1:5000/
+python3 gitops/nexus/nexus-reconcile.py
+```
+
+## Reference
+
+- [`docs/reference/nexus-webhook-ansible-baseline.md`](../../docs/reference/nexus-webhook-ansible-baseline.md)
