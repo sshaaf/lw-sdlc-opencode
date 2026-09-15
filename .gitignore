@@ -2,5 +2,7 @@
 .cursor
 .claude
 .openspec
-.opencode
-.dockerignore
+# Project agents/skills under .opencode/ are baked into the image — keep them in git.
+# Ignore local OpenCode state only:
+.opencode/cache/
+.opencode/data/

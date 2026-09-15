@@ -21,6 +21,21 @@ Workflow: [`.github/workflows/ci-opencode-image.yml`](.github/workflows/ci-openc
 | `QUAY_USERNAME` | Secret | Quay robot or user |
 | `QUAY_PASSWORD` | Secret | Robot token |
 
+Repository **`sshaaf/sdlc-opencode`** already has placeholders; replace them with real Quay credentials before relying on **publish**:
+
+```bash
+gh variable set QUAY_IMAGE_NAME --body "quay.io/sshaaf/sdlc-opencode"
+gh secret set QUAY_USERNAME --body "YOUR_QUAY_ROBOT_OR_USER"
+gh secret set QUAY_PASSWORD --body "YOUR_QUAY_TOKEN"
+```
+
+Verify (names only; values are hidden):
+
+```bash
+gh secret list
+gh variable list
+```
+
 ### Local build and smoke test
 
 The Dockerfile copies `opencode.json` and `.opencode/` from the **repo root**. The final `.` is required (without it, Podman/Docker use `container/` as context and `COPY` fails).
