@@ -1,0 +1,6 @@
+**openspec/
+.cursor
+.claude
+.openspec
+.opencode
+.dockerignore
