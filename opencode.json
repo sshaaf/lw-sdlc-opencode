@@ -1,4 +1,37 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "default_agent": "impact-analyzer"
+  "default_agent": "impact-analyzer",
+  "agent": {
+    "impact-analyzer": {
+      "mode": "primary",
+      "description": "TPA-aware dependency bump and merge request creation",
+      "permission": {
+        "skill": {
+          "*": "allow",
+          "mr-verify-ephemeral": "deny"
+        },
+        "bash": "ask"
+      }
+    },
+    "mr-verifier": {
+      "mode": "primary",
+      "description": "Isolated verify, ephemeral deploy, MR feedback",
+      "permission": {
+        "skill": {
+          "dependency-impact-remediation": "deny",
+          "mr-verify-ephemeral": "allow"
+        },
+        "bash": "ask"
+      }
+    }
+  },
+  "mcp": {
+    "gitlab": {
+      "type": "http",
+      "url": "http://gitlab-mcp.sdlc-mcp-servers.svc.cluster.local/mcp",
+      "headers": {
+        "PRIVATE-TOKEN": "${GITLAB_PAT}"
+      }
+    }
+  }
 }

@@ -14,6 +14,8 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 
 **Deterministic work** (SBOM upload, webhook routing, optional JSON validation) stays in **Ansible**. **Non-deterministic work** (impact analysis, code changes, MR text, verify orchestration) runs in OpenCode with MCP tools.
 
+**Runtime / platform:** Workloads and platform infrastructure on OpenShift (namespaces, OpenCode Deployment, Routes, GitLab MCP, supporting operators, and related config) are deployed and updated via **Argo CD GitOps** from version-controlled manifests—not ad-hoc `oc apply` for the steady-state platform layer. Ephemeral verify namespaces and Jobs created by `mr-verifier` remain agent-driven exceptions per §5.
+
 ### 1.1 Trigger and flow
 
 1. **Nexus (webhook)** → **Ansible EDA** (listens on `:5000`)
@@ -45,6 +47,7 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 | MCP for GitLab | Use GitLab MCP (HTTP or stdio); avoid bespoke GitLab REST clients in application code. |
 | Isolated builds | Unit tests and compiles run in disposable OpenShift workloads, not in the long-lived OpenCode Deployment. |
 | Stable handoff | MR descriptions include a machine-readable JSON block (§4.4) for the verifier agent and optional Ansible gates. |
+| GitOps platform | Argo CD reconciles cluster infrastructure from Git; OpenCode image tag/digest is promoted via GitOps (§7). |
 
 ### 1.3 Repository layout (target)
 
@@ -56,6 +59,9 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 │   ├── agents/
 │   │   ├── impact-analyzer.md
 │   │   └── mr-verifier.md
+│   ├── reference/
+│   │   ├── gitlab-credentials.md
+│   │   └── gitlab-mcp.md
 │   └── skills/
 │       ├── dependency-impact-remediation/
 │       │   └── SKILL.md
@@ -66,7 +72,11 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 ├── .github/
 │   └── workflows/
 │       └── ci-opencode-image.yml
-├── openshift/
+├── gitops/                    # Argo CD Applications, AppProjects, cluster add-ons
+│   └── argocd/
+│       ├── applications/
+│       └── ...
+├── openshift/                 # Manifests synced by Argo CD (or referenced Kustomize paths)
 │   ├── deployment.yaml
 │   ├── route.yaml
 │   ├── serviceaccount-verifier.yaml
@@ -86,9 +96,10 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 ## 2. Infrastructure prerequisites
 
 * **Red Hat TPA:** On OpenShift; OIDC for automation (`TPA__OIDC__WALKER_CLIENT_SECRET` or equivalent token flow in Ansible).
-* **GitLab:** Self-hosted; PAT with `api`, `read_repository`, `write_repository` (or GitLab MCP OAuth where supported).
+* **GitLab:** Self-hosted; authenticate with **`GITLAB_USERNAME`** and **`GITLAB_PASSWORD`** (service account). A GitLab PAT is **not** provisioned manually—when GitLab MCP or the API requires a token, it is **derived at runtime** from those credentials (§6.0).
 * **GitLab MCP:** Cluster service in namespace `sdlc-mcp-servers`, or stdio GitLab MCP in the OpenCode image.
 * **OpenShift:** Optional `RuntimeClass` `kata` (or gVisor) for verify Jobs; namespace `sdlc-sandboxes` for isolated builds.
+* **Argo CD:** GitOps controller on the cluster; Applications watch this repo (or a deployment repo) for `gitops/` and `openshift/` paths. Cluster bootstrap may require a one-time Argo install; thereafter all platform changes flow through Git merge + sync.
 * **OpenCode:** Container image built from `container/Dockerfile`, published to Quay (§8); Route or internal Service `opencode.sdlc-control-plane.svc.cluster.local`.
 * **LLM provider:** API credentials mounted as Secrets; model IDs configured per agent in `opencode.json`.
 * **GitHub Actions:** Workflow pushes the image to `quay.io` on merges to `main` and on version tags.
@@ -323,6 +334,25 @@ Implement via `oc apply` and templates in-repo; do not embed Fabric8 or Java cli
 
 ## 6. MCP and OpenCode configuration
 
+### 6.0 GitLab authentication (username / password)
+
+Operators provide **username and password** only. Do not require a pre-created PAT in Git or in operator runbooks.
+
+| Variable | Role |
+|----------|------|
+| `GITLAB_URL` | GitLab instance base URL |
+| `GITLAB_USERNAME` | Bot / service user |
+| `GITLAB_PASSWORD` | Password (from OpenShift Secret; GitOps references only) |
+| `GITLAB_PAT` | **Derived** PAT or API token for `PRIVATE-TOKEN` headers—populated by init Job, GitLab MCP sidecar, or secret sync before OpenCode starts |
+
+**Flow:**
+
+1. Argo CD deploys OpenCode and GitLab MCP with Secrets containing username/password.
+2. A bootstrap step (initContainer, Job, GitLab MCP own auth, or External Secrets template) uses those credentials to obtain or refresh a PAT with scopes `api`, `read_repository`, `write_repository` when the chosen integration requires it.
+3. OpenCode MCP client reads `${GITLAB_PAT}` from the environment at runtime.
+
+Details and integration patterns: [`.opencode/reference/gitlab-credentials.md`](.opencode/reference/gitlab-credentials.md).
+
 ### 6.1 `opencode.json` (project root)
 
 ```json
@@ -358,9 +388,11 @@ Implement via `oc apply` and templates in-repo; do not embed Fabric8 or Java cli
 }
 ```
 
+`${GITLAB_PAT}` is **runtime-derived** from `GITLAB_USERNAME` / `GITLAB_PASSWORD` (§6.0), not stored in git. If GitLab MCP is deployed with its own username/password auth, OpenCode may omit this header when connecting to that MCP Service.
+
 For large GitLab tool surfaces, prefer [lazy-mcp](https://gitlab.com/gitlab-org/ai/lazy-mcp) as a single aggregated MCP endpoint.
 
-Environment variables (`GITLAB_PAT`, `GITLAB_URL`, LLM keys) come from OpenShift Secrets; reference them in the Deployment manifest, not in git.
+Environment variables (`GITLAB_URL`, `GITLAB_USERNAME`, `GITLAB_PASSWORD`, derived `GITLAB_PAT`, LLM keys) come from OpenShift Secrets; reference them in GitOps manifests, not in git.
 
 ### 6.2 Server security
 
@@ -375,21 +407,24 @@ Environment variables (`GITLAB_PAT`, `GITLAB_URL`, LLM keys) come from OpenShift
 
 ---
 
-## 7. OpenShift deployment (OpenCode)
+## 7. OpenShift deployment (OpenCode) and GitOps
 
 **Namespace:** `sdlc-control-plane`
+
+Platform resources below are **managed by Argo CD**. Manifests live under `openshift/` and/or `gitops/argocd/`; merging to the tracked branch triggers sync. Do not rely on manual `oc apply` for production drift control. CI publishes the container image to Quay; **image promotion** (tag or digest in Git) is the GitOps contract between application CI and cluster runtime.
 
 | Resource | Purpose |
 |----------|---------|
 | `Deployment` | OpenCode server + optional lazy-mcp sidecar |
 | `Route` / `Service` | EDA and operators reach `:4096` |
-| `Secret` | `OPENCODE_SERVER_PASSWORD`, LLM API key, `GITLAB_PAT` |
-| `ConfigMap` or image bake | `opencode.json`, `.opencode/skills`, `.opencode/agents` |
+| `Secret` | `OPENCODE_SERVER_PASSWORD`, LLM API key, `gitlab-credentials` (`username`, `password`; optional derived `token` / `GITLAB_PAT`) via ExternalSecrets / SealedSecrets—not committed |
+| `ConfigMap` or image bake | `opencode.json`, `.opencode/skills`, `.opencode/agents` baked in image; optional ConfigMap overlay via GitOps |
 | `ServiceAccount` + `RoleBinding` | `mr-verifier` agent credentials (mounted only when running verifier sessions via projected token or `oc` login) |
+| `Application` (Argo CD) | Watches repo path for `sdlc-control-plane` stack; auto-sync or manual promote per policy |
 
 Resource requests: sized for LLM orchestration, not for Maven builds.
 
-**Image reference:** OpenShift `Deployment` SHOULD use the Quay image produced by CI, for example `quay.io/sshaaf/sdlc-opencode:latest` or an immutable `sha-<git-sha>` tag.
+**Image reference:** GitOps SHOULD pin `quay.io/sshaaf/sdlc-opencode` to an immutable `sha-<short-git-sha>` or semver tag from §8—not floating `latest` in production Argo CD parameters.
 
 ---
 

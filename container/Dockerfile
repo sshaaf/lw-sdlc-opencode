@@ -18,5 +18,5 @@ EXPOSE 4096
 ENV OPENCODE_HOSTNAME=0.0.0.0
 ENV OPENCODE_PORT=4096
 
-# Secrets (LLM keys, GITLAB_PAT, OPENCODE_SERVER_PASSWORD) are injected at runtime on OpenShift.
+# Secrets (LLM keys, GITLAB_USERNAME/PASSWORD, derived GITLAB_PAT, OPENCODE_SERVER_PASSWORD) at runtime.
 ENTRYPOINT ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]

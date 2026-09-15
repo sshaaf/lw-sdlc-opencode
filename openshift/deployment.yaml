@@ -34,10 +34,26 @@ spec:
                 secretKeyRef:
                   name: opencode-server
                   key: password
+            - name: GITLAB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-credentials
+                  key: url
+            - name: GITLAB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-credentials
+                  key: username
+            - name: GITLAB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-credentials
+                  key: password
+            # Populated by PAT resolution (init/Job/ESO) — see .opencode/reference/gitlab-credentials.md
             - name: GITLAB_PAT
               valueFrom:
                 secretKeyRef:
-                  name: gitlab-mcp
+                  name: gitlab-credentials
                   key: token
                   optional: true
           # Use TCP when OPENCODE_SERVER_PASSWORD is set (/global/health requires basic auth).
