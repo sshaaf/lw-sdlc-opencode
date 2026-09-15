@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-webhook-reconcile-script
+  labels:
+    app: nexus-webhook-reconcile
+data:
+  reconcile.sh: |
+    #!/bin/sh
+    set -eu
+    NEXUS_URL="${NEXUS_URL:?}"
+    EDA_WEBHOOK_URL="${EDA_WEBHOOK_URL:?}"
+    NEXUS_USER="${NEXUS_USER:-admin}"
+    NEXUS_PASS="${NEXUS_ADMIN_PASSWORD:?}"
+    REPOS="${NEXUS_WEBHOOK_REPOSITORIES:-redhat-packages-remediated}"
+
+    echo "Listing Nexus webhook capabilities..."
+    CAPS=$(curl -sf -u "${NEXUS_USER}:${NEXUS_PASS}" "${NEXUS_URL}/service/rest/v1/capabilities" || echo '{"items":[]}')
+
+    for repo in $(echo "${REPOS}" | tr ',' ' '); do
+      repo=$(echo "$repo" | tr -d ' ')
+      if echo "$CAPS" | grep -q "\"repository\":\"${repo}\"" && echo "$CAPS" | grep -q "${EDA_WEBHOOK_URL}"; then
+        echo "Skip: webhook already exists for repo=${repo}"
+        continue
+      fi
+      echo "Creating webhook for repository=${repo}"
+      BODY=$(printf '%s' "{\"action\":\"capability_Capability\",\"method\":\"create\",\"data\":[{\"typeId\":\"webhook.repository\",\"enabled\":true,\"notes\":\"SDLC EDA webhook\",\"properties\":{\"repository\":\"${repo}\",\"names\":\"component\",\"url\":\"${EDA_WEBHOOK_URL}\",\"secret\":\"\"}}],\"type\":\"rpc\",\"tid\":1}")
+      curl -sf -u "${NEXUS_USER}:${NEXUS_PASS}" -X POST "${NEXUS_URL}/service/extdirect" \
+        -H 'Content-Type: application/json' \
+        -d "${BODY}"
+    done
+    echo "Reconcile complete."
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nexus-webhook-reconcile
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: reconcile
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "/scripts/reconcile.sh"]
+          env:
+            - name: NEXUS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: nexus-webhook-reconcile-env
+                  key: NEXUS_URL
+                  optional: true
+            - name: EDA_WEBHOOK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: nexus-webhook-reconcile-env
+                  key: EDA_WEBHOOK_URL
+                  optional: true
+            - name: NEXUS_WEBHOOK_REPOSITORIES
+              valueFrom:
+                configMapKeyRef:
+                  name: nexus-webhook-reconcile-env
+                  key: NEXUS_WEBHOOK_REPOSITORIES
+                  optional: true
+            - name: NEXUS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nexus-admin
+                  key: password
+                  optional: true
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: nexus-webhook-reconcile-script
+            defaultMode: 0555

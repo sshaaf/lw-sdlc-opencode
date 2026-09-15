@@ -1,0 +1,19 @@
+---
+- name: Trigger OpenCode impact-analyzer from tpa_results
+  hosts: localhost
+  gather_facts: false
+  vars:
+    opencode_base_url: "{{ opencode_base_url | default('http://opencode.sdlc-control-plane.svc.cluster.local:4096') }}"
+    opencode_agent: impact-analyzer
+    opencode_skill: dependency-impact-remediation
+
+  tasks:
+    - name: Map package_info to skill input
+      ansible.builtin.set_fact:
+        opencode_input:
+          artifact_id: "{{ package_info.artifact_id | default(package_info.purl) }}"
+          new_version: "{{ package_info.new_version | default(package_info.fix_version) }}"
+          affected_repos: "{{ affected_repos | default([]) }}"
+
+    - name: Invoke OpenCode impact-analyzer
+      ansible.builtin.import_tasks: tasks/opencode-prompt-async.yml

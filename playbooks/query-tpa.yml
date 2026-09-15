@@ -1,0 +1,68 @@
+---
+# Query TPA for SBOM impact; POST tpa_results back to EDA (Lightwell-aligned).
+- name: Query TPA for affected repositories
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Import TPA token tasks
+      ansible.builtin.import_tasks: tasks/get-tpa-token.yml
+
+    - name: Query TPA SBOM API by label
+      ansible.builtin.uri:
+        url: "{{ tpa_url }}/api/v2/sbom?labels.name={{ tpa_sbom_label | urlencode }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ tpa_access_token }}"
+        validate_certs: "{{ validate_certs | default(false) }}"
+        status_code: [200, 401, 404]
+      register: tpa_query
+      when: tpa_access_token is defined
+      ignore_errors: true
+
+    - name: Set TPA SBOM items from API response
+      ansible.builtin.set_fact:
+        tpa_sbom_items: "{{ tpa_query.json['items'] | default(tpa_query.json['results'] | default([])) }}"
+      when: tpa_query is succeeded
+
+    - name: Derive artifact coordinates from Nexus or vulnerability event
+      ansible.builtin.set_fact:
+        resolved_artifact_id: "{{ artifact_name | default(package_purl) }}"
+        resolved_new_version: "{{ artifact_version | default(fix_version) }}"
+
+    - name: Build affected repos list
+      ansible.builtin.set_fact:
+        affected_repos:
+          - repo_url: "{{ gitlab_url }}/{{ remediation_app_gitlab_path | default('group/app') }}.git"
+            sbom_id: "{{ (tpa_sbom_items[0].id | default('demo-sbom')) if (tpa_sbom_items | default([]) | length > 0) else 'demo-sbom' }}"
+            app_classification: demo
+            deployment_env: development
+        package_info:
+          purl: "{{ package_purl | default(resolved_artifact_id) }}"
+          artifact_id: "{{ resolved_artifact_id }}"
+          vulnerable_version: "{{ vulnerable_version | default('') }}"
+          fix_version: "{{ resolved_new_version }}"
+          new_version: "{{ resolved_new_version }}"
+          cve_id: "{{ cve_id | default('unknown') }}"
+
+    - name: Emit tpa_results (debug)
+      ansible.builtin.debug:
+        msg:
+          type: tpa_results
+          query: "{{ package_purl | default(resolved_artifact_id) }}"
+          affected_repos: "{{ affected_repos }}"
+          package_info: "{{ package_info }}"
+
+    - name: Post tpa_results back to EDA webhook
+      ansible.builtin.uri:
+        url: "{{ eda_webhook_url }}"
+        method: POST
+        body_format: json
+        body:
+          type: tpa_results
+          query: "{{ package_purl | default(resolved_artifact_id) }}"
+          affected_repos: "{{ affected_repos }}"
+          package_info: "{{ package_info }}"
+        status_code: [200, 201, 202, 204]
+        validate_certs: "{{ validate_certs | default(false) }}"
+      register: eda_callback

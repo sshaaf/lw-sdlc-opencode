@@ -1,0 +1,53 @@
+---
+# Document and optionally exercise EDA webhook payloads (run against eda_webhook_url extra_var).
+- name: Verify EDA webhook payload shapes
+  hosts: localhost
+  gather_facts: false
+  vars:
+    eda_webhook_url: "{{ eda_webhook_url | default('http://127.0.0.1:5000/') }}"
+
+  tasks:
+    - name: Show curl examples (Nexus CREATED)
+      ansible.builtin.debug:
+        msg: |
+          curl -sS -X POST '{{ eda_webhook_url }}' -H 'Content-Type: application/json' -d '{
+            "action": "CREATED",
+            "component": { "name": "org.example:demo", "version": "1.0.1", "format": "maven2" }
+          }'
+
+    - name: Show curl example (tpa_results)
+      ansible.builtin.debug:
+        msg: |
+          curl -sS -X POST '{{ eda_webhook_url }}' -H 'Content-Type: application/json' -d '{
+            "type": "tpa_results",
+            "affected_repos": [{"repo_url": "https://gitlab.example.com/group/app.git", "sbom_id": "demo"}],
+            "package_info": {"artifact_id": "org.example:demo", "new_version": "1.0.1", "cve_id": "CVE-2024-0000"}
+          }'
+
+    - name: Show curl example (GitLab MR)
+      ansible.builtin.debug:
+        msg: |
+          curl -sS -X POST '{{ eda_webhook_url }}' -H 'Content-Type: application/json' -d '{
+            "object_kind": "merge_request",
+            "project": { "id": 1, "git_http_url": "https://gitlab.example.com/group/app" },
+            "object_attributes": {
+              "iid": 42, "state": "opened",
+              "source_branch": "update-artifact-demo-1.0.1",
+              "target_branch": "main"
+            }
+          }'
+
+    - name: POST Nexus sample (when send_samples is true)
+      ansible.builtin.uri:
+        url: "{{ eda_webhook_url }}"
+        method: POST
+        body_format: json
+        body:
+          action: CREATED
+          component:
+            name: org.example:demo
+            version: 1.0.1
+            format: maven2
+        status_code: [200, 201, 202, 204]
+        validate_certs: false
+      when: send_samples | default(false) | bool

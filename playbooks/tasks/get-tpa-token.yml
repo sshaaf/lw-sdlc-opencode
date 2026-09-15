@@ -1,0 +1,22 @@
+---
+- name: Get TPA OAuth token from Keycloak
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/realms/{{ keycloak_tpa_realm | default('trusted-profile-analyzer') }}/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: "{{ tpa_oauth_client_id | default('trustify-ui') }}"
+      username: "{{ tpa_uploader_username }}"
+      password: "{{ tpa_uploader_password }}"
+    validate_certs: "{{ validate_certs | default(false) }}"
+    status_code: [200]
+  register: tpa_token_response
+  no_log: true
+  when: tpa_access_token is not defined
+
+- name: Set TPA access token from OAuth response
+  ansible.builtin.set_fact:
+    tpa_access_token: "{{ tpa_token_response.json.access_token }}"
+  when: tpa_access_token is not defined and tpa_token_response is succeeded
+  no_log: true

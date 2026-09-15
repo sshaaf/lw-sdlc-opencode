@@ -12,9 +12,11 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 
 **Control plane:** [OpenCode](https://opencode.ai/docs/server/) running headless (`opencode serve`) in a container on OpenShift. Orchestration logic lives in **Agent Skills** (`SKILL.md`) and **named agents** in `opencode.json`, not in Quarkus or LangGraph4j.
 
-**Deterministic work** (SBOM upload, webhook routing, optional JSON validation) stays in **Ansible**. **Non-deterministic work** (impact analysis, code changes, MR text, verify orchestration) runs in OpenCode with MCP tools.
+**Event automation (Ansible EDA):** Webhook ingress, TPA API calls, and OpenCode HTTP triggers run as **EDA rulebooks + playbooks** in this repository (`eda-rulebooks/`, `playbooks/`). Ansible is the **control plane for the remediation event chain**, not for provisioning cluster infrastructure.
 
-**Runtime / platform:** Workloads and platform infrastructure on OpenShift (namespaces, OpenCode Deployment, Routes, GitLab MCP, supporting operators, and related config) are deployed and updated via **Argo CD GitOps** from version-controlled manifests—not ad-hoc `oc apply` for the steady-state platform layer. Ephemeral verify namespaces and Jobs created by `mr-verifier` remain agent-driven exceptions per §5.
+**Runtime / platform (Argo CD GitOps):** All **infrastructure** on OpenShift—namespaces, Operators, EDA itself, OpenCode Deployment, Routes, GitLab MCP, Secrets/ExternalSecrets wiring, TPA/Keycloak *as cluster services*, network policies—is installed and updated only via **Git** under `gitops/` and `openshift/` (Argo CD Applications reconcile). Do **not** use Ansible playbooks like a Lightwell `demo-setup.sh deploy` to create or mutate that platform layer.
+
+**Non-deterministic work** (impact analysis, code changes, MR text, verify orchestration) runs in **OpenCode** with MCP tools. Ephemeral verify namespaces and Jobs created by `mr-verifier` remain agent-driven exceptions per §5 (not GitOps steady state).
 
 ### 1.1 Trigger and flow
 
@@ -49,6 +51,8 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 | Stable handoff | MR descriptions include a machine-readable JSON block (§4.4) for the verifier agent and optional Ansible gates. |
 | GitOps platform | Argo CD reconciles cluster infrastructure from Git; OpenCode image tag/digest is promoted via GitOps (§7). |
 | EDA ingress | **Chosen path:** Nexus and GitLab webhooks → Ansible EDA → playbooks → OpenCode. GitLab CI trigger is documented only as a future option (§3.5). |
+| Ansible scope | Ansible **only** for EDA rulebooks/playbooks (events). **No** Ansible-driven cluster/infra deploy. |
+| GitOps scope | Argo CD owns **all** infra manifests; image promotion via Git after CI (§7–8). |
 
 ### 1.3 Repository layout (target)
 
@@ -74,9 +78,13 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 │   └── workflows/
 │       └── ci-opencode-image.yml
 ├── gitops/                    # Argo CD Applications, AppProjects, cluster add-ons
-│   └── argocd/
-│       ├── applications/
-│       └── ...
+│   ├── argocd/
+│   │   ├── applications/
+│   │   └── ...
+│   └── nexus/                 # Nexus webhook reconcile (Job/hook) → EDA URL
+│       └── README.md
+├── docs/reference/
+│   └── nexus-webhook-ansible-baseline.md   # API steps ported from Ansible → GitOps
 ├── openshift/                 # Manifests synced by Argo CD (or referenced Kustomize paths)
 │   ├── deployment.yaml
 │   ├── route.yaml
@@ -84,17 +92,28 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 │   └── templates/
 │       ├── verify-job.yaml
 │       └── ephemeral-namespace.yaml
-├── eda-rulebooks/
-│   ├── nexus-trigger.yml
-│   └── gitlab-mr-trigger.yml
+├── eda-rulebooks/             # Synced/mounted by EDA (GitOps deploys EDA; content lives in git)
+│   └── sdlc-remediation.yml
+├── playbooks/                 # Invoked by EDA only — not for infra install
+│   ├── query-tpa.yml
+│   ├── trigger-impact-analyzer.yml
+│   └── trigger-mr-verifier.yml
 ├── gitlab/
 │   ├── ci/opencode-mr-verifier.yml
 │   ├── scripts/trigger-opencode-agent.sh
 │   └── .gitlab-ci.yml.example
-└── playbooks/
-    ├── trigger-impact-analyzer.yml
-    └── trigger-mr-verifier.yml
 ```
+
+### 1.4 Ansible vs Argo CD (responsibility split)
+
+| Concern | Tool | Examples |
+|---------|------|----------|
+| **Infrastructure** | **Argo CD GitOps** | OpenCode Deployment, EDA operator/activation CRs, Routes, MCP server, RBAC, ExternalSecrets, TPA/Keycloak *if managed as cluster apps*, **Nexus repository webhooks → EDA** (§3.1) |
+| **Event chain** | **Ansible EDA** | Rulebooks on `:5000`, `query-tpa.yml`, `trigger-impact-analyzer.yml`, `trigger-mr-verifier.yml`, `tpa_results` callbacks |
+| **Application image** | **GitHub Actions → Quay** | Container build; GitOps updates image tag/digest in Git |
+| **Ephemeral test resources** | **OpenCode agent (`oc`)** | `pr-test-mr-*` namespaces, verify Jobs (exception to GitOps steady state) |
+
+EDA is **deployed** by GitOps; EDA **runs** Ansible logic from git when webhooks arrive. Reference demos that use `ansible-playbook deploy.yml` for the whole stack (e.g. Lightwell `demo-setup.sh`) are **not** the pattern for this project’s infrastructure—only borrow their **TPA query / `tpa_results`** playbook ideas for EDA actions.
 
 ---
 
@@ -104,7 +123,9 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 * **GitLab:** Self-hosted; authenticate with **`GITLAB_USERNAME`** and **`GITLAB_PASSWORD`** (service account). A GitLab PAT is **not** provisioned manually—when GitLab MCP or the API requires a token, it is **derived at runtime** from those credentials (§6.0).
 * **GitLab MCP:** Cluster service in namespace `sdlc-mcp-servers`, or stdio GitLab MCP in the OpenCode image.
 * **OpenShift:** Optional `RuntimeClass` `kata` (or gVisor) for verify Jobs; namespace `sdlc-sandboxes` for isolated builds.
-* **Argo CD:** GitOps controller on the cluster; Applications watch this repo (or a deployment repo) for `gitops/` and `openshift/` paths. Cluster bootstrap may require a one-time Argo install; thereafter all platform changes flow through Git merge + sync.
+* **Argo CD:** GitOps controller on the cluster; Applications watch this repo (or a deployment repo) for `gitops/` and `openshift/` paths. Cluster bootstrap may require a one-time Argo install; thereafter **all infrastructure** changes flow through Git merge + sync—not Ansible deploy playbooks.
+* **Event-Driven Ansible (EDA):** Deployed and configured via **GitOps** (operator, activation, rulebook mount from git). At runtime, EDA executes **only** event playbooks (`playbooks/`)—never used to install OpenCode, MCP, or namespaces.
+* **Sonatype Nexus:** Repository webhooks pointing at EDA are **GitOps-managed** (§3.1); baseline API behavior is documented from the prior Ansible implementation in [`docs/reference/nexus-webhook-ansible-baseline.md`](docs/reference/nexus-webhook-ansible-baseline.md).
 * **OpenCode:** Container image built from `container/Dockerfile`, published to Quay (§8); Route or internal Service `opencode.sdlc-control-plane.svc.cluster.local`.
 * **LLM provider:** API credentials mounted as Secrets; model IDs configured per agent in `opencode.json`.
 * **GitHub Actions:** Workflow pushes the image to `quay.io` on merges to `main` and on version tags.
@@ -113,90 +134,60 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 
 ## 3. Ingestion pipeline
 
-### 3.1 Sonatype Nexus webhook
+### 3.1 Sonatype Nexus webhook (GitOps-managed)
 
-* **Target:** `http://<eda-route>:5000/nexus-upload`
-* **Payload:** Nexus component webhook (`component.name`, `component.version`, `component.format`, `action`).
+Nexus must POST component events to EDA when artifacts are published. **Webhook capabilities are configured via Argo CD GitOps** (`gitops/nexus/`), not via Ansible deploy playbooks. Ansible in this project is only for **EDA event playbooks** after the webhook fires (§1.4).
 
-### 3.2 EDA rulebook (Nexus)
+**EDA target URL (in-cluster):** `http://<eda-webhook-service>.<namespace>.svc.cluster.local:5000/`  
+(Path segment may match rulebook mount, e.g. `/` or `/nexus-upload`—rulebook and Nexus URL must agree.)
 
-**File:** `eda-rulebooks/nexus-trigger.yml`
+**Payload:** Nexus component webhook (`component.name`, `component.version`, `component.format`, `action` e.g. `CREATED`). Custom demos may instead emit `vulnerability_fix_published` at the edge; EDA rules in §3.2 / `sdlc-remediation.yml` should accept the chosen shape.
 
-```yaml
----
-- name: Nexus Artifact Ingestion and TPA Upload
-  hosts: all
-  sources:
-    - ansible.eda.webhook:
-        host: 0.0.0.0
-        port: 5000
-  rules:
-    - name: Trigger impact analyzer on new component
-      condition: event.payload.action == "CREATED"
-      action:
-        run_job_template:
-          name: Upload-TPA-and-Invoke-Impact-Analyzer
-          extra_vars:
-            artifact_name: "{{ event.payload.component.name }}"
-            artifact_version: "{{ event.payload.component.version }}"
-```
+#### 3.1.1 GitOps configuration contract
 
-### 3.3 Playbook: TPA upload and OpenCode (Agent 1)
+| Item | Requirement |
+|------|-------------|
+| **Delivery** | Argo CD Application syncs `gitops/nexus/` (Job, ConfigMap script, or hook) |
+| **Idempotency** | Before create, list `GET /service/rest/v1/capabilities`; skip if same `repository` + `url` exists |
+| **Nexus API** | Prefer **ExtDirect** `POST /service/extdirect` with `typeId: webhook.repository`, `names: component`, `properties.url` = EDA URL (REST create may 500 on some Nexus OSS builds) |
+| **Repositories** | One webhook capability per hosted Maven repo (parameterize list; Lightwell used `redhat-packages-validated` / `redhat-packages-remediated`) |
+| **Secrets** | `NEXUS_ADMIN_PASSWORD` from ExternalSecrets/SealedSecrets; never in git |
+| **Reference** | API steps ported from Ansible: [`docs/reference/nexus-webhook-ansible-baseline.md`](docs/reference/nexus-webhook-ansible-baseline.md) |
 
-**File:** `playbooks/trigger-impact-analyzer.yml`
+#### 3.1.2 Ordering
 
-Deterministic steps only; then invoke OpenCode.
+1. GitOps: EDA Service listening on `:5000` (EDA Application healthy).
+2. GitOps: Nexus webhook reconcile Job runs (depends on EDA URL).
+3. Runtime: publish component → Nexus webhook → EDA rule → `query-tpa.yml` / OpenCode chain.
 
-```yaml
----
-- name: Push SBOM to TPA and start impact-analyzer session
-  hosts: localhost
-  vars:
-    opencode_base_url: "http://opencode.sdlc-control-plane.svc.cluster.local:4096"
-    opencode_agent: impact-analyzer
-  tasks:
-    - name: Upload SBOM to TPA (BOMbastic API)
-      uri:
-        url: "{{ tpa_api_url }}/api/v1/sbom"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ tpa_oidc_token }}"
-          Content-Type: application/json
-        body: "{{ lookup('file', '/tmp/sbom.json') }}"
-        status_code: 201
+### 3.2 EDA rulebook (unified)
 
-    - name: Create OpenCode session
-      uri:
-        url: "{{ opencode_base_url }}/session"
-        method: POST
-        headers:
-          Authorization: "Basic {{ opencode_basic_auth_b64 }}"
-        body_format: json
-        body: {}
-        status_code: 200
-      register: oc_session
+**File:** `eda-rulebooks/sdlc-remediation.yml`
 
-    - name: Start impact-analyzer asynchronously
-      uri:
-        url: "{{ opencode_base_url }}/session/{{ oc_session.json.id }}/prompt_async"
-        method: POST
-        headers:
-          Authorization: "Basic {{ opencode_basic_auth_b64 }}"
-        body_format: json
-        body:
-          agent: "{{ opencode_agent }}"
-          parts:
-            - type: text
-              text: |
-                Load skill dependency-impact-remediation and execute it.
+Single webhook source on port **5000** with three runtime rules (plus a catch-all debug rule):
 
-                Input JSON:
-                {
-                  "artifact_id": "{{ artifact_name }}",
-                  "new_version": "{{ artifact_version }}"
-                }
-        status_code: 204
-```
+| Rule | Condition | Playbook |
+|------|-----------|----------|
+| Nexus / vulnerability | `action == CREATED` or `type == vulnerability_fix_published` | `playbooks/query-tpa.yml` |
+| TPA callback | `type == tpa_results` with `affected_repos` | `playbooks/trigger-impact-analyzer.yml` |
+| GitLab MR | `merge_request` + `opened` + `source_branch` ~ `update-artifact-*` | `playbooks/trigger-mr-verifier.yml` |
+
+Activation **extra_vars** are documented in `eda/README.md` and `eda/example-extra-vars.yml`. On AAP, replace `run_playbook` with `run_job_template` for the same playbooks.
+
+### 3.3 Two-phase flow: TPA query → OpenCode (Agent 1)
+
+**Phase 1 — `playbooks/query-tpa.yml`**
+
+1. Keycloak password grant → TPA bearer token (`playbooks/tasks/get-tpa-token.yml`).
+2. `GET {{ tpa_url }}/api/v2/sbom?labels.name={{ tpa_sbom_label }}`.
+3. Build `affected_repos` and `package_info` (Lightwell `tpa_results` contract).
+4. `POST {{ eda_webhook_url }}` with body `{ "type": "tpa_results", "affected_repos", "package_info" }`.
+
+Optional SBOM upload before query: `playbooks/upload-sbom-tpa.yml` (not on the default Nexus path).
+
+**Phase 2 — `playbooks/trigger-impact-analyzer.yml`**
+
+Maps `package_info` / `affected_repos` to skill input and calls OpenCode via `playbooks/tasks/opencode-prompt-async.yml` (agent `impact-analyzer`, skill `dependency-impact-remediation`).
 
 **Compatibility alias (optional):** A thin HTTP adapter MAY expose `POST /api/v1/agents/impact-analyzer` with the legacy body from the deprecated spec and translate it to the OpenCode calls above. New implementations SHOULD call OpenCode directly.
 
@@ -209,16 +200,12 @@ Deterministic steps only; then invoke OpenCode.
 }
 ```
 
-### 3.4 EDA rulebook (GitLab MR) — **chosen path**
+### 3.4 GitLab MR via same rulebook — **chosen path**
 
-**File:** `eda-rulebooks/gitlab-mr-trigger.yml`
+GitLab instance or project webhooks POST to the **same EDA listener** as Nexus (port 5000). Filtering is in `sdlc-remediation.yml` (not a separate `gitlab-mr-trigger.yml`).
 
-This project uses **Event-Driven Ansible** as the merge-request trigger (not GitLab CI). GitLab project webhooks MUST send MR events to EDA so filtering and playbook execution stay centralized and deterministic.
-
-* **Target:** `http://<eda-route>:5000/gitlab-merge-request`
 * **Condition:** `object_kind == "merge_request"` AND `object_attributes.state == "opened"` AND `object_attributes.source_branch` matches `update-artifact-*`.
-
-**File:** `playbooks/trigger-mr-verifier.yml` — same pattern as §3.3 with agent `mr-verifier`, skill `mr-verify-ephemeral`, and payload fields `merge_request_iid`, `project_id`, `source_branch`, `repository_git_url`.
+* **Playbook:** `playbooks/trigger-mr-verifier.yml` — agent `mr-verifier`, skill `mr-verify-ephemeral`, fields `merge_request_iid`, `project_id`, `source_branch`, `target_branch`, `repository_git_url`.
 
 ### 3.5 GitLab CI trigger — **future option (not in use)**
 

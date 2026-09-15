@@ -1,0 +1,47 @@
+---
+# Requires: opencode_base_url, opencode_agent, opencode_skill, opencode_input (dict)
+# Auth: opencode_server_username (default opencode), opencode_server_password
+#   OR precomputed opencode_basic_auth_b64
+
+- name: Build OpenCode basic auth header
+  ansible.builtin.set_fact:
+    opencode_basic_auth_b64: "{{ (opencode_server_username | default('opencode') ~ ':' ~ opencode_server_password) | b64encode }}"
+  when: opencode_basic_auth_b64 is not defined
+  no_log: true
+
+- name: Create OpenCode session
+  ansible.builtin.uri:
+    url: "{{ opencode_base_url }}/session"
+    method: POST
+    headers:
+      Authorization: "Basic {{ opencode_basic_auth_b64 }}"
+      Content-Type: application/json
+    body_format: json
+    body: {}
+    status_code: [200, 201]
+    validate_certs: "{{ validate_certs | default(false) }}"
+  register: oc_session
+
+- name: Resolve session id
+  ansible.builtin.set_fact:
+    opencode_session_id: "{{ oc_session.json.id | default(oc_session.json.session.id) }}"
+
+- name: Start OpenCode agent asynchronously
+  ansible.builtin.uri:
+    url: "{{ opencode_base_url }}/session/{{ opencode_session_id }}/prompt_async"
+    method: POST
+    headers:
+      Authorization: "Basic {{ opencode_basic_auth_b64 }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      agent: "{{ opencode_agent }}"
+      parts:
+        - type: text
+          text: |
+            Load skill {{ opencode_skill }} and execute it.
+
+            Input JSON:
+            {{ opencode_input | to_nice_json }}
+    status_code: [200, 204]
+    validate_certs: "{{ validate_certs | default(false) }}"

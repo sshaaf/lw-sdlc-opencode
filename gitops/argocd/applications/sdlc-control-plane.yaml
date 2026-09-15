@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sdlc-control-plane
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sshaaf/sdlc-opencode.git
+    targetRevision: main
+    path: gitops/sdlc-control-plane
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sdlc-control-plane
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

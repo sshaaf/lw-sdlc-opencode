@@ -1,0 +1,22 @@
+---
+# Example activation variables — copy to EDA Activation / vault; do not commit real secrets.
+
+tpa_url: "https://tpa.example.com"
+keycloak_url: "https://keycloak.example.com"
+keycloak_tpa_realm: trusted-profile-analyzer
+tpa_oauth_client_id: trustify-ui
+tpa_uploader_username: tpa-uploader
+# tpa_uploader_password: "<from secret>"
+
+tpa_sbom_label: sdlc-demo-sbom
+
+eda_webhook_url: "http://sdlc-eda-webhook.sdlc-control-plane.svc.cluster.local:5000/"
+
+gitlab_url: "https://gitlab.example.com"
+remediation_app_gitlab_path: "sdlc/remediation-app"
+
+opencode_base_url: "http://opencode.sdlc-control-plane.svc.cluster.local:4096"
+opencode_server_username: opencode
+# opencode_server_password: "<from secret>"
+
+validate_certs: false

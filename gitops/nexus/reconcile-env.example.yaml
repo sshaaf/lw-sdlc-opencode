@@ -1,0 +1,9 @@
+# Example ConfigMap — apply via overlay or ExternalSecrets; not for production secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-webhook-reconcile-env
+data:
+  NEXUS_URL: "https://nexus.example.com"
+  EDA_WEBHOOK_URL: "http://sdlc-eda-webhook.sdlc-control-plane.svc.cluster.local:5000/"
+  NEXUS_WEBHOOK_REPOSITORIES: "redhat-packages-remediated,redhat-packages-validated"

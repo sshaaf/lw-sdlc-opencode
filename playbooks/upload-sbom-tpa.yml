@@ -1,0 +1,35 @@
+---
+# Optional: upload SBOM before query-tpa when BOM is not already in TPA.
+# Enable from a separate EDA rule or manual run — not on the default Nexus → query-tpa path.
+#
+# Requires: tpa_url, tpa_access_token (run get-tpa-token.yml first), sbom_file_path, tpa_sbom_label
+#
+# Reference upload API (Lightwell deploy-tpa.yml):
+#   POST {{ tpa_url }}/api/v2/sbom?labels.name={{ tpa_sbom_label }}&format=cyclonedx
+#   Authorization: Bearer {{ tpa_access_token }}
+#   body: file content
+
+- name: Upload SBOM to TPA (optional stub)
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Import TPA token tasks
+      ansible.builtin.import_tasks: tasks/get-tpa-token.yml
+
+    - name: Fail if sbom file not provided
+      ansible.builtin.fail:
+        msg: "Set sbom_file_path to a CycloneDX JSON file before enabling this playbook."
+      when: sbom_file_path is not defined
+
+    - name: Upload SBOM to TPA
+      ansible.builtin.uri:
+        url: "{{ tpa_url }}/api/v2/sbom?labels.name={{ tpa_sbom_label | urlencode }}&format=cyclonedx"
+        method: POST
+        src: "{{ sbom_file_path }}"
+        headers:
+          Authorization: "Bearer {{ tpa_access_token }}"
+          Content-Type: application/json
+        status_code: [200, 201]
+        validate_certs: "{{ validate_certs | default(false) }}"
+      when: tpa_access_token is defined

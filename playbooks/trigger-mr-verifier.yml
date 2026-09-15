@@ -1,0 +1,21 @@
+---
+- name: Trigger OpenCode mr-verifier from GitLab MR webhook
+  hosts: localhost
+  gather_facts: false
+  vars:
+    opencode_base_url: "{{ opencode_base_url | default('http://opencode.sdlc-control-plane.svc.cluster.local:4096') }}"
+    opencode_agent: mr-verifier
+    opencode_skill: mr-verify-ephemeral
+
+  tasks:
+    - name: Build MR payload for skill input
+      ansible.builtin.set_fact:
+        opencode_input:
+          merge_request_iid: "{{ merge_request_iid | int }}"
+          project_id: "{{ project_id | int }}"
+          source_branch: "{{ source_branch }}"
+          target_branch: "{{ target_branch | default('main') }}"
+          repository_git_url: "{{ repository_git_url }}"
+
+    - name: Invoke OpenCode mr-verifier
+      ansible.builtin.import_tasks: tasks/opencode-prompt-async.yml
