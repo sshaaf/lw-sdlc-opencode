@@ -48,6 +48,7 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 | Isolated builds | Unit tests and compiles run in disposable OpenShift workloads, not in the long-lived OpenCode Deployment. |
 | Stable handoff | MR descriptions include a machine-readable JSON block (§4.4) for the verifier agent and optional Ansible gates. |
 | GitOps platform | Argo CD reconciles cluster infrastructure from Git; OpenCode image tag/digest is promoted via GitOps (§7). |
+| EDA ingress | **Chosen path:** Nexus and GitLab webhooks → Ansible EDA → playbooks → OpenCode. GitLab CI trigger is documented only as a future option (§3.5). |
 
 ### 1.3 Repository layout (target)
 
@@ -86,6 +87,10 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 ├── eda-rulebooks/
 │   ├── nexus-trigger.yml
 │   └── gitlab-mr-trigger.yml
+├── gitlab/
+│   ├── ci/opencode-mr-verifier.yml
+│   ├── scripts/trigger-opencode-agent.sh
+│   └── .gitlab-ci.yml.example
 └── playbooks/
     ├── trigger-impact-analyzer.yml
     └── trigger-mr-verifier.yml
@@ -204,16 +209,28 @@ Deterministic steps only; then invoke OpenCode.
 }
 ```
 
-### 3.4 EDA rulebook (GitLab MR)
+### 3.4 EDA rulebook (GitLab MR) — **chosen path**
 
 **File:** `eda-rulebooks/gitlab-mr-trigger.yml`
 
-GitLab webhooks SHOULD hit EDA first so filtering stays deterministic.
+This project uses **Event-Driven Ansible** as the merge-request trigger (not GitLab CI). GitLab project webhooks MUST send MR events to EDA so filtering and playbook execution stay centralized and deterministic.
 
 * **Target:** `http://<eda-route>:5000/gitlab-merge-request`
 * **Condition:** `object_kind == "merge_request"` AND `object_attributes.state == "opened"` AND `object_attributes.source_branch` matches `update-artifact-*`.
 
 **File:** `playbooks/trigger-mr-verifier.yml` — same pattern as §3.3 with agent `mr-verifier`, skill `mr-verify-ephemeral`, and payload fields `merge_request_iid`, `project_id`, `source_branch`, `repository_git_url`.
+
+### 3.5 GitLab CI trigger — **future option (not in use)**
+
+> **Note:** We are **not** using this path today. Merge requests are triggered via **§3.4 (EDA)** only. The files under `gitlab/` are kept so the same OpenCode API call (`/session`, `/prompt_async`, agent `mr-verifier`) can be invoked later from a **`.gitlab-ci.yml`** in an application repo—useful if a team prefers MR pipelines over instance webhooks, or runners already have a trust path to OpenCode without routing through EDA.
+
+If adopted in the future, a job on `merge_request_event` would mirror `playbooks/trigger-mr-verifier.yml` using:
+
+* **Templates:** `gitlab/ci/opencode-mr-verifier.yml`, `gitlab/scripts/trigger-opencode-agent.sh`, example `gitlab/.gitlab-ci.yml.example`
+* **CI variables:** `OPENCODE_BASE_URL`, `OPENCODE_SERVER_PASSWORD` (masked)
+* **Do not** run EDA webhooks and GitLab CI triggers for the same MR without coordination (duplicate verifier sessions).
+
+See [`gitlab/README.md`](gitlab/README.md).
 
 ---
 

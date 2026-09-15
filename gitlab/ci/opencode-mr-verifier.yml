@@ -1,0 +1,46 @@
+# FUTURE OPTION — not used while MR triggers go through Ansible EDA (spec.md §3.4).
+# Include from your project .gitlab-ci.yml (vendor this file + script, or set SDLC_OPENCODE_RAW_BASE).
+#
+#   include:
+#     - local: gitlab/ci/opencode-mr-verifier.yml
+#
+# CI/CD variables (masked): OPENCODE_BASE_URL, OPENCODE_SERVER_PASSWORD
+# Optional: SDLC_OPENCODE_RAW_BASE = https://gitlab.example.com/sshaaf/sdlc-opencode/-/raw/main
+
+.opencode-trigger:
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache curl jq bash
+  variables:
+    OPENCODE_SERVER_USERNAME: opencode
+
+trigger-mr-verifier:
+  extends: .opencode-trigger
+  stage: .pre
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - |
+      # Optional: only dependency-update MRs (spec.md). Uncomment:
+      # case "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}" in update-artifact-*) ;; *) echo "Skip: not an update-artifact branch"; exit 0 ;; esac
+      if [ -f gitlab/scripts/trigger-opencode-agent.sh ]; then
+        TRIGGER=gitlab/scripts/trigger-opencode-agent.sh
+      elif [ -n "${SDLC_OPENCODE_RAW_BASE:-}" ]; then
+        curl -sf "${SDLC_OPENCODE_RAW_BASE}/gitlab/scripts/trigger-opencode-agent.sh" -o /tmp/trigger-opencode-agent.sh
+        chmod +x /tmp/trigger-opencode-agent.sh
+        TRIGGER=/tmp/trigger-opencode-agent.sh
+      else
+        echo "Add gitlab/scripts to this repo or set SDLC_OPENCODE_RAW_BASE to raw URL of sdlc-opencode"
+        exit 1
+      fi
+      cat > /tmp/mr-payload.json <<EOF
+      {
+        "merge_request_iid": ${CI_MERGE_REQUEST_IID},
+        "project_id": ${CI_PROJECT_ID},
+        "source_branch": "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}",
+        "target_branch": "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}",
+        "repository_git_url": "${CI_PROJECT_URL}.git"
+      }
+      EOF
+      bash "${TRIGGER}" mr-verifier /tmp/mr-payload.json
+  allow_failure: true

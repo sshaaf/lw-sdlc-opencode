@@ -1,0 +1,20 @@
+# Example: copy to your GitLab application repo as .gitlab-ci.yml
+# Triggers mr-verifier on every merge request pipeline.
+
+stages:
+  - verify-agent
+
+variables:
+  OPENCODE_SERVER_USERNAME: opencode
+  # CI/CD → Variables (masked, protected as needed):
+  #   OPENCODE_BASE_URL     e.g. https://opencode-sdlc.apps.example.com
+  #   OPENCODE_SERVER_PASSWORD
+
+include:
+  - local: gitlab/ci/opencode-mr-verifier.yml
+
+# If this repo does not vendor sdlc-opencode files, use project include instead:
+# include:
+#   - project: sshaaf/sdlc-opencode
+#     ref: main
+#     file: /gitlab/ci/opencode-mr-verifier.yml
