@@ -3,5 +3,15 @@ kind: Kustomization
 
 namespace: sdlc-control-plane
 
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: sdlc-eda-bootstrap-source
+    files:
+      - bootstrap-aap-eda.py
+
 resources:
+  - ../base/cluster-config
   - configmap-activation-reference.yaml
+  - bootstrap-job.yaml

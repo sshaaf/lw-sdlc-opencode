@@ -13,15 +13,14 @@ Namespace for OpenCode: **`sdlc-control-plane`**. Nexus reconcile Job runs in th
 | `opencode-llm` | `api_key` | OpenCode LLM provider env (name per provider docs) |
 | `nexus-admin` | `password` | Nexus reconcile Job |
 | `redhat-packages-credentials` | `username`, `password` | Nexus proxy repos (Lightwell Network) |
+| `aap-credentials` | `username`, `password` | EDA bootstrap Job → AAP API |
+| `eda-activation-secrets` | `tpa_uploader_password`, `opencode_server_password` | EDA activation `extra_var` (bootstrap Job) |
 
-## EDA / AAP (not always Kubernetes Secrets)
+## EDA / AAP (activation extra_var)
 
 | Credential | Consumer |
 |------------|----------|
-| `tpa_uploader_password` | EDA activation extra_vars / AAP credential |
-| `opencode_server_password` | EDA activation extra_vars |
-
-Bind these in AAP to match [`../base/cluster-config/cluster-config.yaml`](../base/cluster-config/cluster-config.yaml) non-secret fields.
+Passwords for EDA are injected by [`../sdlc-eda/bootstrap-job.yaml`](../sdlc-eda/bootstrap-job.yaml) into activation `extra_var` (or set manually in AAP UI). Non-secret fields come from `sdlc-cluster-config`.
 
 ## Optional
 

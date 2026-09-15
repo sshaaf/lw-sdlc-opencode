@@ -49,20 +49,31 @@ spec:
       config_keys:
         - name: AAP_CONTROLLER_URL
           in_cluster_config: true
-          notes: UI/API for operators; rulebooks run on EDA
-        - name: EDA_WEBHOOK_URL
+        - name: EDA_PROJECT_NAME
           in_cluster_config: true
-          notes: In-cluster listener for playbooks + Nexus tpa_results callback
-        - name: EDA_WEBHOOK_ROUTE_URL
+        - name: EDA_PROJECT_SCM_URL
           in_cluster_config: true
-          notes: External HTTPS URL if GitLab/Nexus cannot reach cluster DNS
+          notes: HTTPS git URL of this repo (root contains eda-rulebooks/ + playbooks/)
+        - name: EDA_RULEBOOK_NAME
+          in_cluster_config: true
+          notes: Default sdlc-remediation.yml
         - name: EDA_ACTIVATION_NAME
           in_cluster_config: true
+        - name: EDA_DECISION_ENV_NAME
+          in_cluster_config: true
+        - name: EDA_DECISION_ENV_IMAGE
+          in_cluster_config: true
+        - name: EDA_WEBHOOK_URL
+          in_cluster_config: true
+        - name: EDA_WEBHOOK_ROUTE_URL
+          in_cluster_config: true
       secrets:
-        - secret: aap-eda-token
-          keys: [token]
-          optional: true
-          notes: Only if automation talks to Controller API from cluster
+        - secret: aap-credentials
+          keys: [username, password]
+          consumers: [sdlc-eda-bootstrap-job]
+        - secret: eda-activation-secrets
+          keys: [tpa_uploader_password, opencode_server_password]
+          consumers: [sdlc-eda-bootstrap-job]
 
     - id: gitlab
       component: GitLab

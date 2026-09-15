@@ -8,7 +8,7 @@ Ansible in this repository is **only** for EDA rulebooks and event playbooks. Cl
 |------|---------|
 | `eda-rulebooks/sdlc-remediation.yml` | Webhook source `:5000`; Nexus/vulnerability → `query-tpa.yml`; `tpa_results` → `trigger-impact-analyzer.yml`; GitLab MR → `trigger-mr-verifier.yml` |
 
-Mount the rulebook and `playbooks/` into the EDA activation (same paths as in-repo).
+**Load on platform:** GitOps bootstrap [`gitops/sdlc-eda/`](../gitops/sdlc-eda/README.md) syncs this repo into an AAP EDA project and enables activation on `sdlc-remediation.yml`. SCM layout: [`eda-rulebooks/README.md`](../eda-rulebooks/README.md).
 
 ## Activation extra_vars
 

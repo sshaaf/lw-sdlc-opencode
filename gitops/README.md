@@ -22,7 +22,7 @@ Argo CD on the cluster syncs paths under this directory. **Fill integration data
 
 Manifests: [`argocd/applications/`](argocd/applications/).
 
-**Sync order:** `sdlc-config` (or `sdlc-control-plane` which includes config) → **secrets** (manual/ESO) → `sdlc-control-plane` → `nexus-webhooks` → configure AAP EDA activation using `sdlc-eda` docs.
+**Sync order:** fill `cluster-config` → **secrets** (ESO) → `sdlc-config` / `sdlc-control-plane` → **`sdlc-eda`** (AAP project + activation + rulebook) → `nexus-webhooks` (wave 1).
 
 ## Single source of truth
 
