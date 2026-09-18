@@ -10,7 +10,11 @@
           "*": "allow",
           "mr-verify-ephemeral": "deny"
         },
-        "bash": "ask"
+        "bash": {
+          "*": "ask",
+          "python3 /app/scripts/gitlab_api.py *": "allow",
+          "python3 scripts/gitlab_api.py *": "allow"
+        }
       }
     },
     "mr-verifier": {
@@ -21,16 +25,13 @@
           "dependency-impact-remediation": "deny",
           "mr-verify-ephemeral": "allow"
         },
-        "bash": "ask"
-      }
-    }
-  },
-  "mcp": {
-    "gitlab": {
-      "type": "http",
-      "url": "http://gitlab-mcp.sdlc-mcp-servers.svc.cluster.local/mcp",
-      "headers": {
-        "PRIVATE-TOKEN": "${GITLAB_PAT}"
+        "bash": {
+          "*": "ask",
+          "python3 /app/scripts/gitlab_api.py *": "allow",
+          "python3 scripts/gitlab_api.py *": "allow",
+          "oc *": "allow",
+          "kubectl *": "allow"
+        }
       }
     }
   }

@@ -17,6 +17,10 @@ Lightwell publishes a remediating package → **Nexus** webhook → **EDA** → 
 
 Seed GitLab after tenant create:
 
+The tenant chart Job **`create-gitlab-tenant`** seeds help-app sources automatically (`gitlab.helpAppSeed.enabled`, default `true`) from bundled `files/help-app-seed.tar.gz`.
+
+Optional manual fallback (laptop):
+
 ```bash
 export GITLAB_TOKEN=<root-or-maintainer-pat>
 ./scripts/seed-help-app-to-gitlab.sh <guid>
@@ -45,3 +49,5 @@ Negative: publish an unrelated GAV → `count: 0` → no OpenCode impact session
 ## GitOps
 
 Deploy via **`lightwell-workshop`** `bootstrap-infra` + `bootstrap-tenant` only. This repo supplies SCM (rulebooks/playbooks/agents/image). See [`gitops/DEPRECATED.md`](../gitops/DEPRECATED.md).
+
+GitLab mutations use **`python3 /app/scripts/gitlab_api.py`** (PAT), not GitLab MCP (requires GitLab ≥18.6).

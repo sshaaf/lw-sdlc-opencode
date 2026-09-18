@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Seed tenant GitLab project with lw-demo-help-app sources (demo depth A).
+# Optional laptop fallback — prefer bootstrap-tenant Job create-gitlab-tenant
+# (gitlab.helpAppSeed.enabled) which seeds the same help-app tree in-cluster.
 #
 # Usage:
 #   ./scripts/seed-help-app-to-gitlab.sh <guid> [src-dir]

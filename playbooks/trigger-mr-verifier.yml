@@ -3,7 +3,6 @@
   hosts: localhost
   gather_facts: false
   vars:
-    opencode_base_url: "{{ opencode_base_url | default('http://opencode.sdlc-control-plane.svc.cluster.local:4096') }}"
     opencode_agent: mr-verifier
     opencode_skill: mr-verify-ephemeral
 

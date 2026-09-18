@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    opencode_base_url: "{{ opencode_base_url | default('http://opencode.sdlc-control-plane.svc.cluster.local:4096') }}"
+    # Do not self-reference opencode_base_url here; EDA/extra_vars supply it.
     opencode_agent: impact-analyzer
     opencode_skill: dependency-impact-remediation
 

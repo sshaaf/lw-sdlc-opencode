@@ -4,7 +4,8 @@
   hosts: localhost
   gather_facts: false
   vars:
-    blast_radius_mode: "{{ blast_radius_mode | default('single_app_demo_a') }}"
+    # Literal default only — self-referential Jinja (x: "{{ x | default(...) }}") recurses on AWX.
+    blast_radius_mode: single_app_demo_a
     remediation_gitlab_path: "{{ remediation_app_gitlab_path | default('lightwell/lw-demo-help-app') }}"
 
   tasks:

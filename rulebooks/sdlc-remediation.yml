@@ -37,6 +37,7 @@
               gitlab_url: "{{ gitlab_url }}"
               remediation_app_gitlab_path: "{{ remediation_app_gitlab_path }}"
               eda_webhook_url: "{{ eda_webhook_url }}"
+              blast_radius_mode: single_app_demo_a
 
     - name: TPA query results callback
       condition: >
