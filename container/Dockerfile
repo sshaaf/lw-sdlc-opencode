@@ -9,7 +9,8 @@
 FROM ghcr.io/anomalyco/opencode:latest
 
 USER root
-RUN apk add --no-cache git openssh-client ca-certificates python3 curl tar \
+# gcompat: official oc/kubectl are glibc binaries; Alpine is musl.
+RUN apk add --no-cache git openssh-client ca-certificates python3 curl tar gcompat \
   && ARCH="$(uname -m)" \
   && case "${ARCH}" in \
        x86_64) OC_SUFFIX="" ;; \
