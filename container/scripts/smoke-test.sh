@@ -15,7 +15,7 @@ trap cleanup EXIT
 
 echo "Verifying baked configuration in ${IMAGE}..."
 docker run --rm --entrypoint sh "${IMAGE}" -c \
-  'test -f /app/opencode.json && test -d /app/.opencode/skills && test -n "$(ls -A /app/.opencode/skills)"'
+  'test -f /app/opencode.json && test -d /app/.opencode/skills && test -n "$(ls -A /app/.opencode/skills)" && command -v oc && command -v kubectl'
 
 echo "Starting container ${CONTAINER_NAME}..."
 docker run -d --name "${CONTAINER_NAME}" \

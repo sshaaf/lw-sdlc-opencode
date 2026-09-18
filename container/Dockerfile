@@ -9,7 +9,18 @@
 FROM ghcr.io/anomalyco/opencode:latest
 
 USER root
-RUN apk add --no-cache git openssh-client ca-certificates python3 \
+RUN apk add --no-cache git openssh-client ca-certificates python3 curl tar \
+  && ARCH="$(uname -m)" \
+  && case "${ARCH}" in \
+       x86_64) OC_SUFFIX="" ;; \
+       aarch64) OC_SUFFIX="-arm64" ;; \
+       *) echo "unsupported arch ${ARCH}"; exit 1 ;; \
+     esac \
+  && curl -fsSL -o /tmp/oc.tgz \
+       "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux${OC_SUFFIX}.tar.gz" \
+  && tar -C /usr/local/bin -xzf /tmp/oc.tgz oc kubectl \
+  && rm -f /tmp/oc.tgz \
+  && oc version --client \
   && mkdir -p /app /tmp/opencode/log \
   && chown -R 1001:0 /app /tmp/opencode \
   && chmod -R g+rwX /app /tmp/opencode \

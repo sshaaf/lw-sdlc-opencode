@@ -13,11 +13,9 @@ OpenCode agents use **`python3 /app/scripts/gitlab_api.py`**, not GitLab MCP. Th
 
 Resolution options:
 
-1. **Bootstrap Job** creates/stores PAT in Secret `gitlab-credentials` key `token` (tenant chart already mounts this as `GITLAB_PAT` when present).
-2. **External Secrets** injects `token` into the same Secret.
-3. Workshop shortcut: seed `token` from GitLab root PAT into `gitlab-credentials` for the tenant.
-
-Username/password alone are **not** enough for the CLI (no session cookie login).
+1. **Bootstrap Job** `sync-gitlab-pat` copies the GitLab root PAT (`secret/gitlab/root-user-personal-token`) into Secret `gitlab-root-pat` key `token` in the tenant SDLC namespace. The OpenCode Deployment mounts that key as `GITLAB_PAT` (required, not optional).
+2. **External Secrets** can replace that Job if it writes the same Secret and key.
+3. Do not rely on `GITLAB_USERNAME` / `GITLAB_PASSWORD` — the CLI does not do session login.
 
 ## GitOps
 
