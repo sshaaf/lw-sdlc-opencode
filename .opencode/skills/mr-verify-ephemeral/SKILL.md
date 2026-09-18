@@ -41,14 +41,15 @@ Prefer handoff JSON over webhook fields when both exist; they must agree on `mer
 
 **Forbidden:** Running `mvn clean verify`, `gradle test`, or `npm test` inside the OpenCode control-plane container.
 
+Demo depth **A** (`lw-demo-help-app`): use **`mvn clean verify`** unless handoff specifies otherwise.
+
 1. **Idempotency:** `oc get job -n sdlc-sandboxes -l mr-iid=<merge_request_iid>` — if a running/succeeded Job exists, reuse logs or skip recreate per operator policy.
 2. Apply verify Job from repo template `openshift/templates/verify-job.yaml` (GitOps may sync this path; substitute env):
    - `GIT_URL` = `repository_git_url`
    - `GIT_BRANCH` = `source_branch`
    - `BUILD_COMMAND` = `mvn clean verify` (or from handoff if extended later)
    - Label: `mr-iid=<merge_request_iid>`
-   - `runtimeClassName: kata` when cluster provides it
-3. Poll Job to completion; stream logs with `oc logs job/<name> -n sdlc-sandboxes`.
+   - `runtimeClassName: kata` when cluster provides it3. Poll Job to completion; stream logs with `oc logs job/<name> -n sdlc-sandboxes`.
 4. Non-zero exit → post MR note with log excerpt; **stop** (no ephemeral deploy).
 
 ## Step 3 — Ephemeral deploy

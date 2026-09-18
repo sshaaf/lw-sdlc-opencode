@@ -13,18 +13,18 @@ When this demo runs on the **managed OpenShift environment**, the following are 
 | **Jenkins** | May be on the platform; **not used** in this demo (no Jenkins-triggered EDA or verify jobs) |
 | **SonarQube** | Quality gates (optional future integration with `mr-verifier`) |
 | **Red Hat Quay** | Platform container registry (may host `sdlc-opencode` image in addition to `quay.io/sshaaf/sdlc-opencode` from GitHub CI) |
-| **OpenShift GitOps (Argo CD)** | Delivers **this repo’s** `gitops/` workloads (OpenCode, secrets wiring, integration Jobs) |
+| **OpenShift GitOps (Argo CD)** | Delivers **lightwell-workshop** `bootstrap-infra` / `bootstrap-tenant` (not overlays under this repo’s `gitops/`) |
 
-## What this repo still owns (GitOps + git content)
+## What this repo still owns (SCM + image)
 
 | Deliverable | Where |
 |-------------|--------|
 | OpenCode image | `container/`, GitHub Actions → Quay (or promote to platform Quay) |
-| OpenCode Deployment / Route / RBAC | `openshift/`, `gitops/sdlc-control-plane/` |
-| EDA rulebook + event playbooks | `eda-rulebooks/sdlc-remediation.yml`, `playbooks/` — sync into **existing** EDA activation (AAP), not a new EDA install |
-| Activation variables | `gitops/base/cluster-config/cluster-config.yaml` → AAP/EDA (see `gitops/sdlc-eda/`) |
-| GitLab MCP (if separate from OpenCode pod) | TBD under `gitops/` |
+| OpenCode Deployment / secrets / Nexus webhooks / EDA bootstrap | **`lightwell-workshop`** `automation/gitops/bootstrap-tenant` (see `gitops/DEPRECATED.md`) |
+| EDA rulebook + event playbooks | `eda-rulebooks/sdlc-remediation.yml`, `playbooks/` — imported by tenant EDA project SCM URL |
+| Tenant integration vars | ConfigMap `tenant-integration` from bootstrap-tenant |
 | Agent skills / `opencode.json` | Baked in image via `.opencode/` |
+| Demo A smoke | `docs/DEMO-A-SMOKE.md` |
 
 ## Artifact ingress: Nexus (chosen), not Artifactory
 

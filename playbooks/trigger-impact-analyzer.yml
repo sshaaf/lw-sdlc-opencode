@@ -8,12 +8,29 @@
     opencode_skill: dependency-impact-remediation
 
   tasks:
-    - name: Map package_info to skill input
+    - name: Normalize blast radius count
+      ansible.builtin.set_fact:
+        blast_count: "{{ (blast_radius.count | default(affected_repos | default([]) | length)) | int }}"
+
+    - name: Skip OpenCode when blast radius is empty
+      ansible.builtin.debug:
+        msg: "Skipping impact-analyzer: blast_radius.count={{ blast_count }} affected_repos={{ affected_repos | default([]) | length }}"
+      when: (blast_count | int) < 1 or (affected_repos | default([]) | length) < 1
+
+    - name: Map package_info and affected_repos[0] to skill input
       ansible.builtin.set_fact:
         opencode_input:
           artifact_id: "{{ package_info.artifact_id | default(package_info.purl) }}"
           new_version: "{{ package_info.new_version | default(package_info.fix_version) }}"
-          affected_repos: "{{ affected_repos | default([]) }}"
+          package_info: "{{ package_info }}"
+          affected_repos: "{{ affected_repos }}"
+          gitlab_path: "{{ affected_repos[0].gitlab_path }}"
+          repo_url: "{{ affected_repos[0].repo_url }}"
+          sbom_label: "{{ affected_repos[0].sbom_label | default('') }}"
+          match_reason: "{{ affected_repos[0].match_reason | default('') }}"
+          blast_radius: "{{ blast_radius | default({'mode': 'single_app_demo_a', 'count': 1}) }}"
+      when: (blast_count | int) >= 1 and (affected_repos | default([]) | length) >= 1
 
     - name: Invoke OpenCode impact-analyzer
       ansible.builtin.import_tasks: tasks/opencode-prompt-async.yml
+      when: (blast_count | int) >= 1 and (affected_repos | default([]) | length) >= 1

@@ -20,16 +20,17 @@ This system automates ingestion, security analysis, codebase remediation, and ep
 
 **Non-deterministic work** (impact analysis, code changes, MR text, verify orchestration) runs in **OpenCode** with MCP tools. Ephemeral verify namespaces and Jobs created by `mr-verifier` remain agent-driven exceptions per §5 (not GitOps steady state).
 
-### 1.1 Trigger and flow
+### 1.1 Trigger and flow (demo depth A)
 
 1. **Nexus (webhook)** → **Ansible EDA** (listens on `:5000`)
-2. **Ansible EDA** → **Red Hat TPA** (upload SBOM via BOMbastic API)
-3. **Ansible EDA** → **OpenCode HTTP API** (start session, agent `impact-analyzer`, skill `dependency-impact-remediation`)
+2. **Ansible EDA** → **`query-tpa.yml`** → **RHTPA** (blast radius by SBOM label) → POST **`tpa_results`** (`affected_repos`, `blast_radius`)
+3. If `blast_radius.count >= 1`: **EDA** → **OpenCode** (`impact-analyzer`, skill `dependency-impact-remediation`) for **`affected_repos[0]`** (help-app)
 4. **Agent `impact-analyzer`** → **GitLab MCP** (branch, commit, open merge request)
-5. **GitLab webhook** → **Ansible EDA** (filter MR events) → **OpenCode HTTP API** (agent `mr-verifier`, skill `mr-verify-ephemeral`)
-6. **Agent `mr-verifier`** → **OpenShift Job or PipelineRun** (clone MR branch, `mvn clean verify` — **not** inside the OpenCode pod)
-7. **Agent `mr-verifier`** → **OpenShift** (ephemeral namespace, deploy, Route)
-8. **Agent `mr-verifier`** → **GitLab MCP** (MR note with test and deploy summary)
+5. **GitLab webhook** → **Ansible EDA** → **OpenCode** (`mr-verifier`, skill `mr-verify-ephemeral`)
+6. **Agent `mr-verifier`** → **OpenShift Job** (`mvn clean verify`) + ephemeral namespace/Route
+7. **Agent `mr-verifier`** → **GitLab MCP** (MR note)
+
+**Not in demo A:** promote/merge to production; multi-app fan-out (same `tpa_results` shape reserved for later).
 
 ```
 ┌────────┐    ┌─────┐    ┌─────┐    ┌──────────────────┐    ┌──────────┐
@@ -39,9 +40,10 @@ This system automates ingestion, security analysis, codebase remediation, and ep
               └─────┘                └────────┬─────────┘    └──────────┘
                                               │
                                               ▼
-                                    Job/Pipeline + ephemeral NS
+                                    Job + ephemeral NS (not prod)
 ```
 
+**GitOps:** `lightwell-workshop` `bootstrap-infra` / `bootstrap-tenant`. **SCM:** this repository.
 ### 1.2 Design principles
 
 | Principle | Requirement |

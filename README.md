@@ -6,9 +6,11 @@ GitLab auth uses **username + password** in cluster Secrets; a PAT is **derived 
 
 **Agent triggers (current):** Nexus and GitLab **webhooks → Ansible EDA** → OpenCode — see [spec.md §3](spec.md). **Infra:** Argo CD GitOps ([`gitops/`](gitops/README.md)); Ansible is only for EDA rulebooks and event playbooks ([spec.md §1.4](spec.md)). **Not used:** Artifactory (OSS webhooks), Jenkins. **Future option:** GitLab CI in [gitlab/](gitlab/README.md).
 
-## Demo flow (Nexus webhook onwards)
+## Demo flow (depth A — blast radius + one app)
 
-Artifact ingress is **Sonatype Nexus** repository webhooks (Lightwell `redhat-packages-*` repos), not Artifactory. EDA runs [`eda-rulebooks/sdlc-remediation.yml`](eda-rulebooks/sdlc-remediation.yml); playbooks live under [`playbooks/`](playbooks/).
+Artifact ingress is **Sonatype Nexus** repository webhooks (Lightwell `redhat-packages-*` repos). EDA runs [`eda-rulebooks/sdlc-remediation.yml`](eda-rulebooks/sdlc-remediation.yml); playbooks live under [`playbooks/`](playbooks/).
+
+**Canonical app:** [`lw-demo-help-app`](../lightwell-demo-collateral/apps/lw-demo-help-app) → GitLab `lightwell/lw-demo-help-app-<guid>`. Smoke steps: [`docs/DEMO-A-SMOKE.md`](docs/DEMO-A-SMOKE.md).
 
 ```mermaid
 sequenceDiagram
@@ -18,15 +20,15 @@ sequenceDiagram
   participant OC as OpenCode
   participant GL as GitLab
 
-  Note over Nexus,EDA: Phase 1 — impact discovery
+  Note over Nexus,EDA: Phase 1 — blast radius (deterministic)
   Nexus->>EDA: Webhook component CREATED (:5000)
-  EDA->>TPA: query-tpa.yml (SBOM API + Keycloak token)
-  EDA->>EDA: POST tpa_results (callback)
-  Note over EDA,OC: Phase 2 — remediation MR
-  EDA->>OC: trigger-impact-analyzer (impact-analyzer)
+  EDA->>TPA: query-tpa.yml (SBOM by label)
+  EDA->>EDA: POST tpa_results (affected_repos + blast_radius)
+  Note over EDA,OC: Phase 2 — remediation MR (one app)
+  EDA->>OC: trigger-impact-analyzer (skip if count=0)
   OC->>GL: MCP branch, bump deps, open MR (update-artifact-*)
 
-  Note over GL,OC: Phase 3 — verify MR
+  Note over GL,OC: Phase 3 — verify MR (ephemeral OCP)
   GL->>EDA: MR webhook opened (update-artifact-*)
   EDA->>OC: trigger-mr-verifier (mr-verifier)
   OC->>GL: MCP MR note (build / ephemeral deploy summary)
@@ -35,14 +37,15 @@ sequenceDiagram
 | Step | What happens |
 |------|----------------|
 | 1 | Nexus publishes to **validated** or **remediated** repo; webhook hits **EDA** (`EDA_WEBHOOK_URL`). |
-| 2 | Rule matches `CREATED` or `vulnerability_fix_published` → **`playbooks/query-tpa.yml`**. |
-| 3 | Playbook queries **RHTPA**, then POSTs **`tpa_results`** back to EDA (`eda_webhook_url`). |
-| 4 | Rule matches `tpa_results` → **`playbooks/trigger-impact-analyzer.yml`** → OpenCode **`impact-analyzer`** / skill **`dependency-impact-remediation`**. |
-| 5 | Agent opens a GitLab **MR** on branch **`update-artifact-*`** with handoff JSON in the description. |
-| 6 | GitLab **MR webhook** → EDA → **`playbooks/trigger-mr-verifier.yml`** → **`mr-verifier`** / **`mr-verify-ephemeral`**. |
-| 7 | Agent runs isolated verify (Job/Pipeline) and optional ephemeral deploy; posts results on the MR. |
+| 2 | Rule → **`playbooks/query-tpa.yml`**: TPA blast radius → `tpa_results` (`blast_radius.count`, `affected_repos`). |
+| 3 | If `count >= 1` → **`trigger-impact-analyzer.yml`** → OpenCode **`impact-analyzer`** / **`dependency-impact-remediation`** for `affected_repos[0]` (help-app). |
+| 4 | Agent opens a GitLab **MR** on branch **`update-artifact-*`** with handoff JSON. |
+| 5 | GitLab **MR webhook** → EDA → **`trigger-mr-verifier.yml`** → **`mr-verifier`** / **`mr-verify-ephemeral`**. |
+| 6 | Agent runs isolated verify (Job) and optional ephemeral deploy; posts results on the MR. **No promote-to-prod in demo A.** |
 
-**GitOps prep (before the loop runs):** fill [`gitops/base/cluster-config/cluster-config.yaml`](gitops/base/cluster-config/cluster-config.yaml), wire [`gitops/secrets/`](gitops/secrets/README.md), sync **`sdlc-eda`** (rulebook activation), **`nexus-webhooks`**, **`sdlc-control-plane`**. See [`gitops/README.md`](gitops/README.md) and [`docs/reference/infra-platform-stack.md`](docs/reference/infra-platform-stack.md).
+**GitOps:** deploy OpenCode/EDA/Nexus/TPA seed via **`lightwell-workshop`** `bootstrap-infra` + `bootstrap-tenant` only ([`gitops/DEPRECATED.md`](gitops/DEPRECATED.md)). This repo is **SCM** (rulebooks, playbooks, agents, image).
+
+**GitOps prep (before the loop runs):** sync workshop bootstrap charts; set tenant `sdlc.scmUrl` to this repo; seed help-app into GitLab (`scripts/seed-help-app-to-gitlab.sh`). See [`docs/DEMO-A-SMOKE.md`](docs/DEMO-A-SMOKE.md).
 
 ## Container image CI
 

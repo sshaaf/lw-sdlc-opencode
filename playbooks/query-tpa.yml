@@ -1,8 +1,11 @@
 ---
-# Query TPA for SBOM impact; POST tpa_results back to EDA (Lightwell-aligned).
+# Query TPA for blast radius; POST tpa_results back to EDA (demo depth A).
 - name: Query TPA for affected repositories
   hosts: localhost
   gather_facts: false
+  vars:
+    blast_radius_mode: "{{ blast_radius_mode | default('single_app_demo_a') }}"
+    remediation_gitlab_path: "{{ remediation_app_gitlab_path | default('lightwell/lw-demo-help-app') }}"
 
   tasks:
     - name: Import TPA token tasks
@@ -20,23 +23,23 @@
       when: tpa_access_token is defined
       ignore_errors: true
 
+    - name: Default empty SBOM items
+      ansible.builtin.set_fact:
+        tpa_sbom_items: []
+
     - name: Set TPA SBOM items from API response
       ansible.builtin.set_fact:
         tpa_sbom_items: "{{ tpa_query.json['items'] | default(tpa_query.json['results'] | default([])) }}"
-      when: tpa_query is succeeded
+      when: tpa_query is succeeded and tpa_query.status == 200
 
     - name: Derive artifact coordinates from Nexus or vulnerability event
       ansible.builtin.set_fact:
-        resolved_artifact_id: "{{ artifact_name | default(package_purl) }}"
-        resolved_new_version: "{{ artifact_version | default(fix_version) }}"
+        resolved_artifact_id: "{{ artifact_name | default(package_purl | default('')) }}"
+        resolved_new_version: "{{ artifact_version | default(fix_version | default('')) }}"
+        resolved_gitlab_path: "{{ remediation_gitlab_path }}"
 
-    - name: Build affected repos list
+    - name: Build package_info
       ansible.builtin.set_fact:
-        affected_repos:
-          - repo_url: "{{ gitlab_url }}/{{ remediation_app_gitlab_path | default('group/app') }}.git"
-            sbom_id: "{{ (tpa_sbom_items[0].id | default('demo-sbom')) if (tpa_sbom_items | default([]) | length > 0) else 'demo-sbom' }}"
-            app_classification: demo
-            deployment_env: development
         package_info:
           purl: "{{ package_purl | default(resolved_artifact_id) }}"
           artifact_id: "{{ resolved_artifact_id }}"
@@ -45,6 +48,30 @@
           new_version: "{{ resolved_new_version }}"
           cve_id: "{{ cve_id | default('unknown') }}"
 
+    # Demo A: labeled SBOM present ⇒ one affected app (help-app). No SBOM ⇒ count 0.
+    - name: Build blast radius — match (single app)
+      ansible.builtin.set_fact:
+        affected_repos:
+          - repo_url: "{{ gitlab_url | regex_replace('/$', '') }}/{{ resolved_gitlab_path }}.git"
+            gitlab_path: "{{ resolved_gitlab_path }}"
+            sbom_id: "{{ tpa_sbom_items[0].id | default('unknown') }}"
+            sbom_label: "{{ tpa_sbom_label }}"
+            match_reason: "sbom_label_and_dependency_coordinate"
+            app_classification: demo
+            deployment_env: development
+        blast_radius:
+          mode: "{{ blast_radius_mode }}"
+          count: 1
+      when: (tpa_sbom_items | length) > 0 and (resolved_artifact_id | length) > 0
+
+    - name: Build blast radius — no match
+      ansible.builtin.set_fact:
+        affected_repos: []
+        blast_radius:
+          mode: "{{ blast_radius_mode }}"
+          count: 0
+      when: (tpa_sbom_items | length) == 0 or (resolved_artifact_id | default('') | length) == 0
+
     - name: Emit tpa_results (debug)
       ansible.builtin.debug:
         msg:
@@ -52,6 +79,7 @@
           query: "{{ package_purl | default(resolved_artifact_id) }}"
           affected_repos: "{{ affected_repos }}"
           package_info: "{{ package_info }}"
+          blast_radius: "{{ blast_radius }}"
 
     - name: Post tpa_results back to EDA webhook
       ansible.builtin.uri:
@@ -63,6 +91,7 @@
           query: "{{ package_purl | default(resolved_artifact_id) }}"
           affected_repos: "{{ affected_repos }}"
           package_info: "{{ package_info }}"
+          blast_radius: "{{ blast_radius }}"
         status_code: [200, 201, 202, 204]
         validate_certs: "{{ validate_certs | default(false) }}"
       register: eda_callback

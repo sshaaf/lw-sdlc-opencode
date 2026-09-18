@@ -1,2 +1,0 @@
-# Deprecated — use gitops/config/cluster-config.yaml (ConfigMap sdlc-cluster-config).
-# Nexus reconcile Job reads NEXUS_URL, EDA_WEBHOOK_URL, NEXUS_WEBHOOK_REPOSITORIES from that ConfigMap.
