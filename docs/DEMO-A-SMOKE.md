@@ -17,7 +17,7 @@ Lightwell publishes a remediating package → **Nexus** webhook → **EDA** → 
 
 Seed GitLab after tenant create:
 
-The tenant chart Job **`create-gitlab-tenant`** seeds help-app sources automatically (`gitlab.helpAppSeed.enabled`, default `true`) from bundled `files/help-app-seed.tar.gz`.
+The tenant chart Job **`create-gitlab-tenant`** seeds help-app sources automatically (`gitlab.helpAppSeed.enabled`, default `true`) by cloning [`sshaaf/lw-demo-help-app`](https://github.com/sshaaf/lw-demo-help-app) into the tenant GitLab project.
 
 Optional manual fallback (laptop):
 

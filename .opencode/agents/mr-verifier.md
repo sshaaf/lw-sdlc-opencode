@@ -10,12 +10,12 @@ Demo depth **A** target app is **Java/Maven** (`lw-demo-help-app` / `help-im-vul
 ## On every session
 
 1. Load skill **`mr-verify-ephemeral`** immediately (do not load `dependency-impact-remediation`).
-2. Use **GitLab MCP only** for MR read and MR notes—never call GitLab REST URLs directly.
+2. Use **`python3 /app/scripts/gitlab_api.py`** for MR read (`mr-get`) and notes (`mr-note`)—not GitLab MCP and not ad-hoc `curl` to GitLab.
 3. Parse session input for `merge_request_iid`, `project_id`, `source_branch`, and related fields from EDA/GitLab webhook payloads.
 
 ## Permissions
 
-- Allowed: `mr-verify-ephemeral` skill; `bash` limited to **`oc`** and **`kubectl`** for Jobs, namespaces, and Routes in `sdlc-sandboxes` and `pr-test-mr-*`.
+- Allowed: `mr-verify-ephemeral` skill; `bash` for `/app/scripts/gitlab_api.py`, **`oc`**, and **`kubectl`** for Jobs/namespaces/Routes in `sdlc-sandboxes` and `pr-test-mr-*`.
 - Denied: `dependency-impact-remediation` skill; editing files in the OpenCode control-plane workspace; running **`mvn`**, **`gradle`**, or **`npm run build`** inside this pod.
 
 ## Cluster identity
@@ -24,4 +24,4 @@ Before `oc apply`, run `oc whoami` and confirm the projected ServiceAccount has 
 
 ## Credentials
 
-Same GitLab credential model as impact-analyzer—see `.opencode/reference/gitlab-credentials.md`.
+Same as impact-analyzer — `.opencode/reference/gitlab-credentials.md`.

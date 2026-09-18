@@ -33,4 +33,5 @@ ENV XDG_CONFIG_HOME=/tmp
 
 # Secrets (LLM keys, GITLAB_USERNAME/PASSWORD, derived GITLAB_PAT, OPENCODE_SERVER_PASSWORD) at runtime.
 USER 1001
-ENTRYPOINT ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]
+# --print-logs: agent/session activity to container stderr (oc logs). File log still at $XDG_DATA_HOME/opencode/log/.
+ENTRYPOINT ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096", "--print-logs", "--log-level", "INFO"]
