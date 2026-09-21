@@ -1,16 +1,28 @@
 # SDLC agent remediation demo
 
-Autonomous software supply chain remediation using **OpenCode** on OpenShift, driven by **Ansible EDA**. See **[spec.md](spec.md)** for the full system design.
+Autonomous software supply chain remediation using **OpenCode** on OpenShift, driven by **Ansible EDA**. See **[spec.md](spec.md)** for the full system design. Smoke checklist: [`docs/DEMO-A-SMOKE.md`](docs/DEMO-A-SMOKE.md).
 
-**GitLab mutations** use **`python3 /app/scripts/gitlab_api.py`** with a cluster **`GITLAB_PAT`** (copied from the GitLab root PAT by the tenant chart). Do not use GitLab MCP on workshop GitLab 17.x (official MCP needs ≥18.6). Credentials: [.opencode/reference/gitlab-credentials.md](.opencode/reference/gitlab-credentials.md).
+| Layer | Owner |
+|-------|--------|
+| **SCM** (this repo) | [`rulebooks/`](rulebooks/), [`playbooks/`](playbooks/), [`.opencode/`](.opencode/) agents & skills, [`container/`](container/) image → `quay.io/sshaaf/sdlc-opencode` |
+| **GitOps** | **`lightwell-workshop`** `bootstrap-infra` + `bootstrap-tenant` (OpenCode Deployment, EDA activation, Nexus, GitLab seed, secrets). Do not use the deprecated tree in [`gitops/DEPRECATED.md`](gitops/DEPRECATED.md). |
 
-**Triggers:** Nexus and GitLab **webhooks → Ansible EDA** → OpenCode. **Infra:** Argo CD via **`lightwell-workshop`** `bootstrap-infra` + `bootstrap-tenant` only ([`gitops/DEPRECATED.md`](gitops/DEPRECATED.md)). This repo is **SCM** (rulebooks, playbooks, agents, image).
+**GitLab mutations** use **`python3 /app/scripts/gitlab_api.py`** with cluster **`GITLAB_PAT`** (Job `sync-gitlab-pat` copies the GitLab root PAT). Do not use GitLab MCP on workshop GitLab 17.x (official MCP needs ≥18.6). Credentials: [.opencode/reference/gitlab-credentials.md](.opencode/reference/gitlab-credentials.md).
 
 ## Demo flow (depth A — blast radius + one app)
 
-Artifact ingress is **Sonatype Nexus** repository webhooks (Lightwell `redhat-packages-*` repos). EDA runs [`rulebooks/sdlc-remediation.yml`](rulebooks/sdlc-remediation.yml); Controller playbooks live under [`playbooks/`](playbooks/).
+Lightwell publishes a remediating Maven package → **Nexus** webhook → **EDA** → **RHTPA blast radius** (one app) → OpenCode **`impact-analyzer`** opens a GitLab MR → **`mr-verifier`** runs isolated **`oc`** Jobs / ephemeral OpenShift proof and posts an MR note. **No promote-to-prod in demo A.**
 
-**Canonical app:** [`lw-demo-help-app`](https://github.com/sshaaf/lw-demo-help-app) → tenant GitLab `lightwell/lw-demo-help-app-<guid>` (seeded automatically by Job `create-gitlab-tenant`). Detailed smoke notes: [`docs/DEMO-A-SMOKE.md`](docs/DEMO-A-SMOKE.md).
+**Canonical app:** [`lw-demo-help-app`](https://github.com/sshaaf/lw-demo-help-app) → tenant GitLab `lightwell/lw-demo-help-app-<guid>` (seeded by Job `create-gitlab-tenant`). SBOM label `sdlc-demo-<guid>`.
+
+**Agents (baked in the image):**
+
+| Agent | Skill | Role |
+|-------|--------|------|
+| [`impact-analyzer`](.opencode/agents/impact-analyzer.md) | [`dependency-impact-remediation`](.opencode/skills/dependency-impact-remediation/SKILL.md) | Consume `tpa_results`, bump one Maven dep, open `update-artifact-*` MR + agent-handoff JSON |
+| [`mr-verifier`](.opencode/agents/mr-verifier.md) | [`mr-verify-ephemeral`](.opencode/skills/mr-verify-ephemeral/SKILL.md) | Parse handoff, `mvn clean verify` in a sandbox Job, optional ephemeral NS/Route, MR note |
+
+EDA activation imports [`rulebooks/sdlc-remediation.yml`](rulebooks/sdlc-remediation.yml) and runs Controller job templates backed by [`playbooks/`](playbooks/).
 
 ```mermaid
 sequenceDiagram
@@ -19,30 +31,34 @@ sequenceDiagram
   participant TPA as RHTPA
   participant OC as OpenCode
   participant GL as GitLab
+  participant OCP as OpenShift
 
-  Note over Nexus,EDA: Phase 1 — blast radius (deterministic)
+  Note over Nexus,TPA: Phase 1 — blast radius (deterministic)
   Nexus->>EDA: Webhook component CREATED
-  EDA->>TPA: query-tpa.yml (SBOM by label)
+  EDA->>EDA: JT "SDLC Query TPA" (query-tpa.yml)
+  EDA->>TPA: SBOM by label sdlc-demo-guid
   EDA->>EDA: POST tpa_results (affected_repos + blast_radius)
 
-  Note over EDA,OC: Phase 2 — remediation MR (one app)
-  EDA->>OC: trigger-impact-analyzer (skip if count=0)
+  Note over EDA,GL: Phase 2 — remediate one app
+  EDA->>OC: JT "SDLC Trigger Impact Analyzer" (skip if count=0)
   OC->>GL: gitlab_api.py bump-maven-mr (update-artifact-*)
 
-  Note over GL,OC: Phase 3 — verify MR
+  Note over GL,OCP: Phase 3 — verify on OpenShift
   GL->>EDA: MR webhook opened (update-artifact-*)
-  EDA->>OC: trigger-mr-verifier (mr-verifier)
-  OC->>GL: gitlab_api.py mr-note (verify / ephemeral summary)
+  EDA->>OC: JT "SDLC Trigger MR Verifier"
+  OC->>OCP: oc apply Job (sdlc-sandboxes) + ephemeral NS pr-test-mr-*
+  OCP-->>OC: Job logs / Route
+  OC->>GL: gitlab_api.py mr-note (verify + ephemeral summary)
 ```
 
 | Step | What happens |
 |------|----------------|
-| 1 | Nexus publishes to a **validated** or **remediated** repo; webhook hits **EDA** (`EDA_WEBHOOK_URL` / Route). |
-| 2 | Rule → **`playbooks/query-tpa.yml`**: TPA SBOM by label → `tpa_results` (`blast_radius.count`, `affected_repos`). Demo A uses `blast_radius_mode: single_app_demo_a`. |
-| 3 | If `count >= 1` → **`trigger-impact-analyzer.yml`** → OpenCode **`impact-analyzer`** / skill **`dependency-impact-remediation`** for `affected_repos[0]` (help-app). |
-| 4 | Agent opens a GitLab **MR** on branch **`update-artifact-*`** via **`gitlab_api.py bump-maven-mr`**, with agent-handoff JSON in the description. |
-| 5 | GitLab **MR webhook** → EDA → **`trigger-mr-verifier.yml`** → OpenCode **`mr-verifier`** / skill **`mr-verify-ephemeral`**. |
-| 6 | Agent uses **`oc`** (baked into the image) for isolated verify Jobs / ephemeral NS when templates and RBAC allow, then posts an MR note. **No promote-to-prod in demo A.** |
+| 1 | Nexus publishes to a **validated** or **remediated** repo (`redhat-packages-*`); webhook hits **EDA** (`EDA_WEBHOOK_URL` / Route). |
+| 2 | Rule → JT **SDLC Query TPA** → [`playbooks/query-tpa.yml`](playbooks/query-tpa.yml): TPA SBOM by label → `tpa_results` (`blast_radius.count`, `affected_repos`). Mode: `single_app_demo_a`. |
+| 3 | If `count >= 1` → JT **SDLC Trigger Impact Analyzer** → OpenCode **`impact-analyzer`** for `affected_repos[0]` (help-app). |
+| 4 | Agent opens a GitLab **MR** on **`update-artifact-*`** via **`gitlab_api.py bump-maven-mr`**, with agent-handoff JSON in the description. |
+| 5 | GitLab **MR webhook** → EDA → JT **SDLC Trigger MR Verifier** → OpenCode **`mr-verifier`**. |
+| 6 | Agent uses baked-in **`oc`/`kubectl`** (image includes OpenShift client + `gcompat`) for a verify Job in `sdlc-sandboxes` and optional `pr-test-mr-*` namespace/Route, then posts an MR note. |
 
 Negative check: unrelated GAV → `count: 0` → no impact-analyzer session.
 
