@@ -80,8 +80,18 @@ Demo depth **A** (`lw-demo-help-app`): use **`mvn clean verify`** unless handoff
      --dry-run=client -o yaml | oc apply -f -
    ```
 
+   Maven 3.8.1+ ships a built-in `maven-default-http-blocker` mirror that refuses every plain-HTTP repository, so the Nexus URLs above fail with `Blocked mirror for repositories: [...]` unless that blocker is overridden. Redefining a mirror with the same id and `<mirrorOf>dummy</mirrorOf>` replaces it. This is safe here and only here: the traffic is pod-to-Service inside the cluster and never crosses the pod network. Do **not** carry this override into any build that resolves over the public internet.
+
    ```xml
    <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+     <mirrors>
+       <mirror>
+         <id>maven-default-http-blocker</id>
+         <mirrorOf>dummy</mirrorOf>
+         <name>Allow in-cluster HTTP to Nexus</name>
+         <url>http://0.0.0.0/</url>
+       </mirror>
+     </mirrors>
      <profiles>
        <profile>
          <id>lightwell</id>
@@ -220,6 +230,7 @@ Include: verify Job name and pass/fail, ephemeral namespace and Route URL, smoke
 | Job failed | `mr-note` with logs; stop |
 | Job still running after the poll budget | `mr-note` reporting a timeout — never report a failed Job as "blocked" |
 | `Could not find artifact ... in central` | Build config bug, not a bad bump — check the `maven-settings` ConfigMap and `-s` flag before blaming the MR |
+| `Blocked mirror for repositories` | The `maven-default-http-blocker` override is missing from settings.xml |
 | `oc` forbidden | `mr-note`; stop |
 | Duplicate webhook | Prefer idempotent Job/NS checks before create |
 
