@@ -202,17 +202,52 @@ Demo depth **A** (`lw-demo-help-app`): use **`mvn clean verify`** unless handoff
 
 Namespace: `pr-test-mr-<merge_request_iid>`.
 
-1. **Idempotency:** if namespace exists, inspect existing Deployment/Route before creating duplicates.
-2. `oc create namespace pr-test-mr-<merge_request_iid>` (or apply from `openshift/templates/ephemeral-namespace.yaml` when present).
-3. Deploy application image documented for the demo app.
-4. Expose Route; record URL for smoke tests.
+1. **Idempotency:** if the namespace exists, inspect the existing BuildConfig/Deployment/Route before creating duplicates. A BuildConfig can be re-run with `oc start-build`; it does not need recreating.
+2. `oc create namespace pr-test-mr-<merge_request_iid>`.
+3. **Provision git credentials again — as a `basic-auth` secret this time.** The ephemeral namespace is separate from `sdlc-sandboxes`, so it does not have the step 2 secret, and an OpenShift build will **not** accept the Opaque `gitlab-pat`: `source.sourceSecret` requires type `kubernetes.io/basic-auth`. Without it the build pod dies in its init container with `could not read Username`, exactly as the verify Job does in step 2.
+
+   ```bash
+   oc create secret generic gitlab-basic -n pr-test-mr-<merge_request_iid> \
+     --type=kubernetes.io/basic-auth \
+     --from-literal=username=oauth2 --from-literal=password="$GITLAB_PAT" \
+     --dry-run=client -o yaml | oc apply -f -
+   ```
+
+4. Build the MR branch from source, linking that secret:
+
+   ```bash
+   oc new-build --name=help-im-vulnerable --strategy=docker \
+     --source-secret=gitlab-basic \
+     "<repository_git_url>#<source_branch>" \
+     --to=help-im-vulnerable:mr-<merge_request_iid> \
+     -n pr-test-mr-<merge_request_iid>
+   ```
+
+   Confirm `.spec.source.sourceSecret.name` is set before starting the build; `oc new-build` silently omits it if the secret does not yet exist.
+
+5. Deploy the built image from the internal registry and expose it:
+
+   ```bash
+   oc new-app --image-stream=help-im-vulnerable:mr-<merge_request_iid> -n pr-test-mr-<merge_request_iid>
+   oc create route edge --service=help-im-vulnerable --port=http -n pr-test-mr-<merge_request_iid>
+   ```
+
+6. Wait for `oc rollout status deploy/help-im-vulnerable` before smoke testing, and record the Route URL.
 
 Platform namespaces for OpenCode are managed by **Argo CD**—do not modify `sdlc-control-plane` or `sdlc-mcp-servers` in this skill.
 
 ## Step 4 — Smoke tests
 
-1. Run smoke suite against Route URL (or documented `curl` checks).
-2. Capture pass/fail and response snippets (no secrets).
+Run the checks from a pod inside the cluster, not from the OpenCode container — the Route's edge certificate is signed by the cluster CA and the demo app is only reachable on the cluster network.
+
+```bash
+oc run smoke-mr-<merge_request_iid> --rm -i --restart=Never \
+  -n pr-test-mr-<merge_request_iid> \
+  --image=registry.access.redhat.com/ubi9/toolbox:latest -- \
+  /bin/sh -c "curl -ksS --fail --max-time 30 https://<route-host>/api/status"
+```
+
+For demo depth **A**, `/api/status` returns one row per tracked library. The bump under test is verified when the row for the remediated `artifact_id` reports the new `.rhlw-` version in `lightwellFix` with `"loaded": true`. Capture pass/fail and a short response snippet (no secrets) — do not paste the whole payload into the MR note.
 
 ## Step 5 — Summarize on MR
 
@@ -231,6 +266,7 @@ Include: verify Job name and pass/fail, ephemeral namespace and Route URL, smoke
 | Job still running after the poll budget | `mr-note` reporting a timeout — never report a failed Job as "blocked" |
 | `Could not find artifact ... in central` | Build config bug, not a bad bump — check the `maven-settings` ConfigMap and `-s` flag before blaming the MR |
 | `Blocked mirror for repositories` | The `maven-default-http-blocker` override is missing from settings.xml |
+| Build pod `Init:Error` with `could not read Username` | The BuildConfig has no `sourceSecret`, or it points at an Opaque secret — step 3 needs a `kubernetes.io/basic-auth` one |
 | `oc` forbidden | `mr-note`; stop |
 | Duplicate webhook | Prefer idempotent Job/NS checks before create |
 
