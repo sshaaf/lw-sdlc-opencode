@@ -10,9 +10,16 @@
         port: 5000
 
   rules:
+    # The CREATED branch must match only Lightwell remediated artifacts, identified by
+    # the .rhlw-NNNNN version suffix. Nexus fires component CREATED whenever a proxy
+    # repo caches anything, so an unfiltered condition also matches ordinary transitive
+    # dependencies — and the MR verify build resolves through these same proxies, so it
+    # re-triggers this pipeline once per artifact it pulls.
     - name: Nexus component created or vulnerability fix published
       condition: >
-        (event.payload.action is defined and event.payload.action == "CREATED") or
+        (event.payload.action is defined and event.payload.action == "CREATED" and
+         event.payload.component.version is defined and
+         event.payload.component.version is search("rhlw-")) or
         (event.payload.type is defined and event.payload.type == "vulnerability_fix_published")
       action:
         run_job_template:
