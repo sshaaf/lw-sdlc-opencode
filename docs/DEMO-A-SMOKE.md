@@ -46,6 +46,38 @@ Nexus component `CREATED` on that repo must hit EDA (`EDA_WEBHOOK_URL` / Route).
 
 Negative: publish an unrelated GAV → `count: 0` → no OpenCode impact session.
 
+## Simulated Demo A (curl)
+
+After provision + static `verify-sdlc-flow.sh <guid>` passes:
+
+```bash
+GUID=<guid>
+DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+EDA="https://sdlc-remediation-${GUID}-aap.${DOMAIN}/"
+
+curl -sk -X POST "$EDA" -H 'Content-Type: application/json' -d '{
+  "action": "CREATED",
+  "component": {
+    "name": "com.fasterxml.woodstox:woodstox-core",
+    "version": "6.0.3.rhlw-00001",
+    "format": "maven2"
+  }
+}'
+```
+
+Watch AAP Controller jobs **SDLC Query TPA** → **SDLC Trigger Impact Analyzer** → GitLab MR → **SDLC Trigger MR Verifier**.
+
+## Validation script
+
+From **`lightwell-workshop`** after the tenant is up:
+
+```bash
+./automation/gitops/bootstrap-tenant/scripts/verify-sdlc-flow.sh <guid>
+./automation/gitops/bootstrap-tenant/scripts/verify-sdlc-flow.sh <guid> --smoke
+./automation/gitops/bootstrap-tenant/scripts/verify-sdlc-flow.sh <guid> --smoke --smoke-rules
+./automation/gitops/bootstrap-tenant/scripts/verify-sdlc-flow.sh <guid> --cleanup
+```
+
 ## GitOps
 
 Deploy via **`lightwell-workshop`** `bootstrap-infra` + `bootstrap-tenant` only. This repo supplies SCM (rulebooks/playbooks/agents/image). See [`gitops/DEPRECATED.md`](../gitops/DEPRECATED.md).
