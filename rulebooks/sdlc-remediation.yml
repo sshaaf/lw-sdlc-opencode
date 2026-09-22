@@ -27,11 +27,17 @@
           organization: "{{ aap_organization_name }}"
           job_args:
             extra_vars:
-              artifact_name: "{{ event.payload.component.name | default(event.payload.artifact_name | default('')) }}"
-              artifact_version: "{{ event.payload.component.version | default(event.payload.artifact_version | default('')) }}"
-              package_purl: "{{ event.payload.package | default(event.payload.component.name | default('')) }}"
+              # Only the Nexus branch of the condition supplies `component`; a
+              # vulnerability_fix_published event has no such key. Templates render under
+              # strict undefined, where `event.payload.component.name` raises before the
+              # `default` filter ever runs — so the whole action fails with "Undefined
+              # jinja variable 'component'" and no job launches. Coercing `component` to
+              # an empty dict first keeps the attribute lookup legal for both shapes.
+              artifact_name: "{{ (event.payload.component | default({})).name | default(event.payload.artifact_name | default('')) }}"
+              artifact_version: "{{ (event.payload.component | default({})).version | default(event.payload.artifact_version | default('')) }}"
+              package_purl: "{{ event.payload.package | default((event.payload.component | default({})).name | default('')) }}"
               vulnerable_version: "{{ event.payload.vulnerable_version | default('') }}"
-              fix_version: "{{ event.payload.fix_version | default(event.payload.component.version | default('')) }}"
+              fix_version: "{{ event.payload.fix_version | default((event.payload.component | default({})).version | default('')) }}"
               cve_id: "{{ event.payload.cve_id | default('unknown') }}"
               severity: "{{ event.payload.severity | default('medium') }}"
               tpa_url: "{{ tpa_url }}"
