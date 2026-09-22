@@ -213,23 +213,44 @@ Namespace: `pr-test-mr-<merge_request_iid>`.
      --dry-run=client -o yaml | oc apply -f -
    ```
 
-4. Build the MR branch from source, linking that secret:
+4. **Build the MR branch with an inline Dockerfile.** `lw-demo-help-app` ships **no Dockerfile**, so a plain `--strategy=docker` build against the git URL fails in about ten seconds with `ManageDockerfileFailed` / `open /tmp/build/inputs/Dockerfile: no such file or directory` — before it ever compiles anything. Supply the Dockerfile through `--dockerfile` instead; the git source still provides the application code.
+
+   The image must be built the same way the step 2 Job was: a multi-stage build whose builder stage resolves through the **tenant Nexus**, or Maven cannot find the remediated `.rhlw-` artifact. Reuse the `NEXUS_NS` / `NEXUS_REPOS` values discovered in step 3 of the verify Job, and the same `maven-default-http-blocker` override.
+
+   Write the Dockerfile to a file first, substituting the discovered Nexus values into the embedded `settings.xml`:
+
+   ```dockerfile
+   FROM registry.access.redhat.com/ubi9/openjdk-17:1.20 AS builder
+   USER 0
+   WORKDIR /build
+   COPY pom.xml .
+   COPY src ./src
+   # One <repository> per NEXUS_REPOS entry, remediated first; keep the blocker override.
+   RUN mkdir -p /root/.m2 && printf '%s' '<settings ...>' > /root/.m2/settings.xml
+   RUN mvn -B clean package -DskipTests
+   FROM registry.access.redhat.com/ubi9/openjdk-17-runtime:1.20
+   COPY --from=builder /build/target/help-im-vulnerable-*.jar /deployments/app.jar
+   COPY --from=builder /build/target/bom.json /deployments/maven-sbom.json
+   EXPOSE 8080
+   ENTRYPOINT ["java", "-jar", "/deployments/app.jar"]
+   ```
 
    ```bash
    oc new-build --name=help-im-vulnerable --strategy=docker \
      --source-secret=gitlab-basic \
+     --dockerfile="$(cat /tmp/opencode/Dockerfile.mr-<merge_request_iid>)" \
      "<repository_git_url>#<source_branch>" \
      --to=help-im-vulnerable:mr-<merge_request_iid> \
      -n pr-test-mr-<merge_request_iid>
    ```
 
-   Confirm `.spec.source.sourceSecret.name` is set before starting the build; `oc new-build` silently omits it if the secret does not yet exist.
+   Confirm both `.spec.source.sourceSecret.name` and `.spec.source.dockerfile` are set before starting the build; `oc new-build` silently omits the secret if it does not yet exist. A started build reports its source as `Dockerfile,Git@<sha>` when the inline Dockerfile took effect — plain `Git@<sha>` means it did not, and the build will fail.
 
-5. Deploy the built image from the internal registry and expose it:
+5. Deploy the built image from the internal registry and expose it. The container listens on **8080** and `oc new-app` names that port `8080-tcp`, so `--port=http` does not match any port on the Service and route creation fails:
 
    ```bash
    oc new-app --image-stream=help-im-vulnerable:mr-<merge_request_iid> -n pr-test-mr-<merge_request_iid>
-   oc create route edge --service=help-im-vulnerable --port=http -n pr-test-mr-<merge_request_iid>
+   oc create route edge --service=help-im-vulnerable --port=8080 -n pr-test-mr-<merge_request_iid>
    ```
 
 6. Wait for `oc rollout status deploy/help-im-vulnerable` before smoke testing, and record the Route URL.
@@ -267,6 +288,9 @@ Include: verify Job name and pass/fail, ephemeral namespace and Route URL, smoke
 | `Could not find artifact ... in central` | Build config bug, not a bad bump — check the `maven-settings` ConfigMap and `-s` flag before blaming the MR |
 | `Blocked mirror for repositories` | The `maven-default-http-blocker` override is missing from settings.xml |
 | Build pod `Init:Error` with `could not read Username` | The BuildConfig has no `sourceSecret`, or it points at an Opaque secret — step 3 needs a `kubernetes.io/basic-auth` one |
+| Build `Failed (ManageDockerfileFailed)` in ~10s, `open /tmp/build/inputs/Dockerfile: no such file or directory` | The repo has no Dockerfile — pass one with `--dockerfile`; do not retry the build unchanged |
+| Ephemeral build fails with `Could not find artifact ... in central` | The inline Dockerfile's `settings.xml` is missing the tenant Nexus repos — same root cause as step 2, different file |
+| `oc create route` rejects `--port=http` | The Service port is `8080-tcp`; use `--port=8080` |
 | `oc` forbidden | `mr-note`; stop |
 | Duplicate webhook | Prefer idempotent Job/NS checks before create |
 
